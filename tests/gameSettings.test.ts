@@ -16,6 +16,20 @@ test('settings fall back safely when storage is empty or malformed', () => {
   assert.deepEqual(loadGameSettings(storage('{bad json')), DEFAULT_GAME_SETTINGS)
 })
 
+test('new players start without reference skeleton or head tracking but keep camera skeletons', () => {
+  const settings = loadGameSettings(storage('{}'))
+  assert.equal(settings.showSkeletons, false)
+  assert.equal(settings.trackHead, false)
+  assert.equal(settings.showCameraSkeletons, true)
+  assert.equal(settings.showPoseDebug, false)
+})
+
+test('saved reference and head preferences override the new defaults', () => {
+  const settings = loadGameSettings(storage(JSON.stringify({ showSkeletons: true, trackHead: true })))
+  assert.equal(settings.showSkeletons, true)
+  assert.equal(settings.trackHead, true)
+})
+
 test('settings preserve valid choices and repair invalid fields', () => {
   const store = storage(JSON.stringify({
     soundMuted: true,
@@ -32,8 +46,15 @@ test('settings preserve valid choices and repair invalid fields', () => {
     language: 'zh',
     showSkeletons: false,
     showCameraSkeletons: false,
-    trackHead: true,
+    trackHead: false,
+    showPoseDebug: false,
   })
+})
+
+test('pose diagnostics are opt-in and persist when enabled', () => {
+  const store = storage()
+  saveGameSettings({ ...DEFAULT_GAME_SETTINGS, showPoseDebug: true }, store)
+  assert.equal(loadGameSettings(store).showPoseDebug, true)
 })
 
 test('camera and reference skeleton preferences stay independent', () => {

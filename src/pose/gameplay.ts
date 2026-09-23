@@ -145,29 +145,6 @@ function wristGap(landmarks: CueLandmark[]): number | null {
   return visible(left) && visible(right) && scale ? distance(left, right) / scale : null
 }
 
-function torsoX(landmarks: CueLandmark[]): number | null {
-  const points = [11, 12, 23, 24].map((index) => landmarks[index]).filter(visible)
-  return points.length >= 3 ? points.reduce((sum, point) => sum + point.x, 0) / points.length : null
-}
-
-function sampleNearAge(
-  history: { t: number; value: CueFrame }[],
-  now: number,
-  age: number,
-  tolerance: number,
-) {
-  let best: { t: number; value: CueFrame } | null = null
-  let bestDistance = Infinity
-  for (const sample of history) {
-    const difference = Math.abs(now - sample.t - age)
-    if (difference <= tolerance && difference < bestDistance) {
-      best = sample
-      bestDistance = difference
-    }
-  }
-  return best
-}
-
 /** Score one cue from a short per-player pose history. */
 export function scoreCue(
   cue: CueEvent,
@@ -205,48 +182,22 @@ export function scoreCue(
     }
   }
 
-  if (cue.kind === 'clap') {
-    const previous = movementBaseline(history, now, 0.25, 0.7)
-    const gap = wristGap(current.landmarks)
-    const previousGap = previous ? wristGap(previous.landmarks) : null
-    if (gap === null || previousGap === null) return { match: null, movement: null }
-    const closing = previousGap - gap
-    if (closing < 0.25) return { match: null, movement: closing }
-    const proximity = clamp(
-      100 - Math.max(0, gap - cue.expectedGap) / 0.4 * 100,
-      0,
-      100,
-    )
-    const left = compareHitAngles(current.feature, cue.feature, 'leftHand', mirrored, trackHead).score
-    const right = compareHitAngles(current.feature, cue.feature, 'rightHand', mirrored, trackHead).score
-    if (left === null && right === null) return { match: null, movement: closing }
-    const armPose = left === null ? right! : right === null ? left : (left + right) / 2
-    return { match: Math.round(proximity * 0.7 + armPose * 0.3), movement: closing }
-  }
-
-  const start = sampleNearAge(history, now, cue.duration, 0.3)
-  const recent = sampleNearAge(history, now, Math.min(0.25, cue.duration / 3), 0.18)
-  const currentX = torsoX(current.landmarks)
-  const startX = start ? torsoX(start.value.landmarks) : null
-  const recentX = recent ? torsoX(recent.value.landmarks) : null
-  const currentScale = bodyScale(current.landmarks)
-  const startScale = start ? bodyScale(start.value.landmarks) : null
-  if (currentX === null || startX === null || !currentScale || !startScale) {
-    return { match: null, movement: null }
-  }
-  const displacement = (currentX - startX) / ((currentScale + startScale) / 2)
-  const expected = mirrored ? -cue.displacement : cue.displacement
-  if (Math.sign(displacement) !== Math.sign(expected)) return { match: 0, movement: displacement }
-  if (Math.abs(displacement) < Math.abs(expected) * 0.5) return { match: 0, movement: displacement }
-  // Slow cameras may have no sample inside the final quarter-second. The
-  // displacement and timing gates still reject standing still in that case.
-  const recentMovement = recentX === null ? null : (currentX - recentX) / currentScale
-  const slowedOrReversed = recentMovement === null
-    || Math.sign(recentMovement) !== Math.sign(displacement)
-    || Math.abs(recentMovement) <= Math.abs(displacement) * 0.55
-  if (!slowedOrReversed) return { match: null, movement: displacement }
-  const ratio = Math.abs(displacement / expected)
-  return { match: Math.round(clamp(100 - Math.abs(ratio - 1) * 100, 0, 100)), movement: displacement }
+  const previous = movementBaseline(history, now, 0.25, 0.7)
+  const gap = wristGap(current.landmarks)
+  const previousGap = previous ? wristGap(previous.landmarks) : null
+  if (gap === null || previousGap === null) return { match: null, movement: null }
+  const closing = previousGap - gap
+  if (closing < 0.25) return { match: null, movement: closing }
+  const proximity = clamp(
+    100 - Math.max(0, gap - cue.expectedGap) / 0.4 * 100,
+    0,
+    100,
+  )
+  const left = compareHitAngles(current.feature, cue.feature, 'leftHand', mirrored, trackHead).score
+  const right = compareHitAngles(current.feature, cue.feature, 'rightHand', mirrored, trackHead).score
+  if (left === null && right === null) return { match: null, movement: closing }
+  const armPose = left === null ? right! : right === null ? left : (left + right) / 2
+  return { match: Math.round(proximity * 0.7 + armPose * 0.3), movement: closing }
 }
 
 function clamp(value: number, min: number, max: number) {

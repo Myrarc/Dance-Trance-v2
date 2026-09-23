@@ -15,6 +15,7 @@ export interface GameSettings {
   showSkeletons: boolean
   showCameraSkeletons: boolean
   trackHead: boolean
+  showPoseDebug: boolean
 }
 
 type SettingsStorage = Pick<Storage, 'getItem' | 'setItem'>
@@ -26,9 +27,10 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   menuTheme: 'theme1',
   reducedEffects: false,
   language: 'en',
-  showSkeletons: true,
+  showSkeletons: false,
   showCameraSkeletons: true,
-  trackHead: true,
+  trackHead: false,
+  showPoseDebug: false,
 }
 
 function browserStorage(): SettingsStorage | null {
@@ -48,11 +50,12 @@ export function loadGameSettings(storage: SettingsStorage | null = browserStorag
         ? saved.menuTheme as MenuTheme : 'theme1',
       reducedEffects: typeof saved.reducedEffects === 'boolean' ? saved.reducedEffects : false,
       language: saved.language === 'zh' ? 'zh' : 'en',
-      showSkeletons: typeof saved.showSkeletons === 'boolean' ? saved.showSkeletons : true,
+      showSkeletons: typeof saved.showSkeletons === 'boolean' ? saved.showSkeletons : false,
       showCameraSkeletons: typeof saved.showCameraSkeletons === 'boolean'
         ? saved.showCameraSkeletons
         : typeof saved.showSkeletons === 'boolean' ? saved.showSkeletons : true,
-      trackHead: typeof saved.trackHead === 'boolean' ? saved.trackHead : true,
+      trackHead: typeof saved.trackHead === 'boolean' ? saved.trackHead : false,
+      showPoseDebug: typeof saved.showPoseDebug === 'boolean' ? saved.showPoseDebug : false,
     }
   } catch {
     return DEFAULT_GAME_SETTINGS

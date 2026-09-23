@@ -2,8 +2,8 @@ export type SfxEvent = 'menu' | 'navigateLeft' | 'navigateRight' | 'gestureOne' 
 
 const NOTES: Record<SfxEvent, { frequencies: number[]; duration: number; gain: number }> = {
   menu: { frequencies: [330], duration: 0.05, gain: 0.035 },
-  navigateLeft: { frequencies: [440, 349], duration: 0.07, gain: 0.025 },
-  navigateRight: { frequencies: [349, 440], duration: 0.07, gain: 0.025 },
+  navigateLeft: { frequencies: [440, 349], duration: 0.07, gain: 0.125 },
+  navigateRight: { frequencies: [349, 440], duration: 0.07, gain: 0.125 },
   gestureOne: { frequencies: [523], duration: 0.1, gain: 0.25 },
   gestureTwo: { frequencies: [659], duration: 0.1, gain: 0.25 },
   gestureThree: { frequencies: [784], duration: 0.1, gain: 0.25 },

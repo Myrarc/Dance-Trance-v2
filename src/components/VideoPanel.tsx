@@ -626,7 +626,7 @@ export default function VideoPanel({
           remaining,
           reduceMotionRef.current,
         )
-        drawCueGlyph(hitCtx, target, x, y, markerRadius, v.currentTime, mirrorRef.current)
+        drawCueGlyph(hitCtx, target, x, y, markerRadius, v.currentTime)
         if (feedback?.target === target && remaining <= 0 && remaining >= -0.45) {
           drawArcadeHitLabel(hitCtx, x, y, markerRadius, feedback.grade)
         }

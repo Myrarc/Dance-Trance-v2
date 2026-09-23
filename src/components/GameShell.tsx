@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import { T, L } from '../i18n'
 import { accuracy, type PlayerRound } from '../pose/gameplay'
 import type { Difficulty } from '../pose/hitTargets'
 import { gradeFromAccuracy, type ArcadeRecord, type Grade } from '../game/records'
 import { MENU_THEMES, type GameSettings } from '../lib/gameSettings'
+import { photoStage } from '../game/resultPhoto'
 
 function useModalFocus(ref: RefObject<HTMLElement | null>) {
   useEffect(() => {
@@ -59,12 +61,13 @@ function HomeIcon({ index }: { index: number }) {
   return <svg className="home-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icons[index]}</svg>
 }
 
-export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, account }: {
+export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, onLibrary, account }: {
   trackingReady: boolean
   selected: number
   motion: { direction: 'left' | 'right'; turn: number } | null
   onMove: (direction: 'left' | 'right') => void
   onSelect: () => void
+  onLibrary: () => void
   account: ReactNode
 }) {
   const centerRef = useRef<HTMLButtonElement>(null)
@@ -86,7 +89,7 @@ export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, 
     }}>
       <div className="home-topline">
         <Brand />
-        <div className="home-account" data-gesture-skip>{account}</div>
+        <div className="home-top-actions" data-gesture-skip><button className="btn home-library-link" onClick={onLibrary}>{L('Library & photos', '舞蹈库与照片')}</button><div className="home-account">{account}</div></div>
       </div>
       <section className="home-hero">
         <div className="home-copy">
@@ -180,6 +183,7 @@ export function SettingsScreen({ settings, onChange, onClose }: {
           <h2>{T('Gameplay')}</h2>
           <Toggle label="Show reference skeleton" detail="Display the pose guide over the reference video." checked={settings.showSkeletons} onChange={(value) => update('showSkeletons', value)} />
           <Toggle label="Track head movements" detail="Include head cues and head position in scoring." checked={settings.trackHead} onChange={(value) => update('trackHead', value)} />
+          <Toggle label="Show pose diagnostics" detail="Display tracking confidence and selection details over the game." checked={settings.showPoseDebug} onChange={(value) => update('showPoseDebug', value)} />
         </div>
         <div className="settings-card">
           <h2>{T('Comfort')}</h2>
@@ -250,15 +254,79 @@ export interface ResultRecord {
   isNewBest: boolean
 }
 
-export function ResultsScreen({ players, difficulty, records, reducedEffects, onReplay, onChooseSong, onHome }: {
+export function ResultsScreen({ players, difficulty, records, reducedEffects, photoRound, photoPrompt, onCapture, onReplay, onChooseSong, onHome }: {
   players: PlayerRound[]
   difficulty: Difficulty
   records: ResultRecord[]
   reducedEffects: boolean
+  photoRound: number
+  photoPrompt: string
+  onCapture: () => Promise<void>
   onReplay: () => void
   onChooseSong: () => void
   onHome: () => void
 }) {
+  const [photoTime, setPhotoTime] = useState(0)
+  const [photoStatus, setPhotoStatus] = useState<'waiting' | 'saving' | 'saved' | 'error' | 'cancelled'>('waiting')
+  const [flash, setFlash] = useState(false)
+  const captureRef = useRef(onCapture)
+  captureRef.current = onCapture
+  useEffect(() => {
+    let active = true
+    let pending = true
+    let startedAt = performance.now()
+    let timer = 0
+    const tick = () => {
+      if (!pending) return
+      if (document.hidden) {
+        pending = false
+        window.clearInterval(timer)
+        setPhotoStatus('cancelled')
+        return
+      }
+      const elapsed = performance.now() - startedAt
+      setPhotoTime(elapsed)
+      if (photoStage(elapsed).phase !== 'capture') return
+      pending = false
+      window.clearInterval(timer)
+      setPhotoStatus('saving')
+      if (!reducedEffects) setFlash(true)
+      void captureRef.current().then(() => {
+        if (!active) return
+        setPhotoStatus('saved')
+      }).catch(() => { if (active) setPhotoStatus('error') })
+    }
+    const onVisibility = () => {
+      if (!document.hidden || !pending) return
+      pending = false
+      window.clearInterval(timer)
+      setPhotoStatus('cancelled')
+    }
+    if (document.hidden) onVisibility()
+    else {
+      startedAt = performance.now()
+      timer = window.setInterval(tick, 80)
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [photoRound, reducedEffects])
+  useEffect(() => {
+    if (!flash) return
+    const timer = window.setTimeout(() => setFlash(false), 1500)
+    return () => window.clearTimeout(timer)
+  }, [flash])
+  const retryPhoto = () => {
+    setPhotoStatus('saving')
+    if (!reducedEffects) setFlash(true)
+    void captureRef.current().then(() => {
+      setPhotoStatus('saved')
+    }).catch(() => setPhotoStatus('error'))
+  }
+  const stage = photoStage(photoTime)
   return (
     <section className="results-card" aria-labelledby="results-title">
       <span className="results-eyebrow">{T('Routine complete')} · {T(difficulty)}</span>
@@ -285,9 +353,14 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, on
       <div className="result-actions">
         <button className="btn primary" onClick={onReplay} autoFocus>{T('Play again')}</button>
         <button className="btn" onClick={onChooseSong}>{T('Choose another song')}</button>
-        <button className="btn subtle" onClick={onHome}>{T('Home')}</button>
+        <button className="btn result-home" onClick={onHome}>{T('Home')}</button>
       </div>
+      {photoStatus === 'saved' && <p className="result-photo-status" role="status">{L('Photo saved to Library → Photos', '照片已保存到舞蹈库 → 照片')}</p>}
+      {photoStatus === 'saving' && <p className="result-photo-status" role="status">{L('Saving your photo…', '正在保存照片…')}</p>}
+      {(photoStatus === 'error' || photoStatus === 'cancelled') && <p className="result-photo-status" role="alert">{L(photoStatus === 'error' ? 'Photo could not be saved.' : 'Photo countdown stopped when this page was hidden.', photoStatus === 'error' ? '照片未能保存。' : '页面隐藏时，拍照倒计时已停止。')} <button className="btn" onClick={retryPhoto}>{L('Retry photo', '重试拍照')}</button></p>}
       <p className="gesture-hint">{T('Right hand up to replay · left hand up to choose a song')}</p>
+      {photoStatus === 'waiting' && stage.phase === 'posing' && createPortal(<div className="result-photo-prompt" role="status" aria-live="polite"><strong>{T(photoPrompt)}</strong><span>{stage.digit}</span></div>, document.body)}
+      {flash && createPortal(<div className="result-photo-flash" aria-hidden="true" />, document.body)}
     </section>
   )
 }

@@ -99,11 +99,16 @@ export function detectMenuGesture(pose: NormalizedLandmark[] | undefined): MenuG
   const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x)
   if (shoulderWidth < 0.06) return null
   const shoulderY = (leftShoulder.y + rightShoulder.y) / 2
-  const armYAllowance = shoulderWidth * 0.65
+  const armYAllowance = shoulderWidth * 0.9
   const leftOutward = Math.sign(leftShoulder.x - rightShoulder.x)
 
-  const leftHandUp = leftWrist.y < nose.y && leftElbow.y < shoulderY
-  const rightHandUp = rightWrist.y < nose.y && rightElbow.y < shoulderY
+  const leftHandUp = leftWrist.y < shoulderY - shoulderWidth * 0.5 &&
+    leftElbow.y < shoulderY + shoulderWidth * 0.3 &&
+    leftWrist.y < leftElbow.y - shoulderWidth * 0.35
+  const rightHandUp = rightWrist.y < shoulderY - shoulderWidth * 0.5 &&
+    rightElbow.y < shoulderY + shoulderWidth * 0.3 &&
+    rightWrist.y < rightElbow.y - shoulderWidth * 0.35
+  if (leftHandUp && rightHandUp) return null
   if (rightHandUp && !leftHandUp) return 'confirm'
   if (leftHandUp && !rightHandUp) return 'back'
 
@@ -112,11 +117,11 @@ export function detectMenuGesture(pose: NormalizedLandmark[] | undefined): MenuG
   const leftExtended =
     Math.abs(leftWrist.y - leftShoulder.y) < armYAllowance &&
     Math.abs(leftElbow.y - leftShoulder.y) < armYAllowance &&
-    (leftWrist.x - leftShoulder.x) * leftOutward > shoulderWidth * 0.6
+    (leftWrist.x - leftShoulder.x) * leftOutward > shoulderWidth * 0.45
   const rightExtended =
     Math.abs(rightWrist.y - rightShoulder.y) < armYAllowance &&
     Math.abs(rightElbow.y - rightShoulder.y) < armYAllowance &&
-    (rightWrist.x - rightShoulder.x) * -leftOutward > shoulderWidth * 0.6
+    (rightWrist.x - rightShoulder.x) * -leftOutward > shoulderWidth * 0.45
 
   // Both arms out remain neutral for menu navigation.
   if (leftExtended === rightExtended) return null

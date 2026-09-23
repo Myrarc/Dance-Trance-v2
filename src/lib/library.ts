@@ -11,11 +11,13 @@
 const DB_NAME = 'dance-trainer'
 import type { ArcadeRecord } from '../game/records'
 
-const DB_VERSION = 3
+const DB_VERSION = 4
 const META_STORE = 'library'
 const BLOB_STORE = 'videos'
 const TRACK_STORE = 'tracks'
 const ARCADE_RECORD_STORE = 'arcadeRecords'
+const RESULT_PHOTO_STORE = 'resultPhotos'
+const RESULT_PHOTO_IMAGE_STORE = 'resultPhotoImages'
 
 /** Above this a single file is indexed but not kept; re-pick it to reload. */
 const MAX_STORED_BYTES = 300 * 1024 * 1024
@@ -94,8 +96,13 @@ export function openLibraryDatabase(): Promise<IDBDatabase> {
         const records = db.createObjectStore(ARCADE_RECORD_STORE, { keyPath: 'id' })
         records.createIndex('videoId', 'videoId')
       }
+      if (!db.objectStoreNames.contains(RESULT_PHOTO_STORE)) db.createObjectStore(RESULT_PHOTO_STORE, { keyPath: 'id' })
+      if (!db.objectStoreNames.contains(RESULT_PHOTO_IMAGE_STORE)) db.createObjectStore(RESULT_PHOTO_IMAGE_STORE)
     }
-    req.onsuccess = () => resolve(req.result)
+    req.onsuccess = () => {
+      req.result.onversionchange = () => req.result.close()
+      resolve(req.result)
+    }
     req.onerror = () => reject(req.error)
   })
   return dbPromise

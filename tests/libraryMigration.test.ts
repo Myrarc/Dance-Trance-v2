@@ -24,7 +24,7 @@ function openLegacyDatabase() {
   })
 }
 
-test('version three preserves the library and adds durable arcade records', async () => {
+test('version four preserves the library and adds durable records and local photos', async () => {
   await new Promise<void>((resolve) => {
     const request = indexedDB.deleteDatabase('dance-trainer')
     request.onsuccess = () => resolve()
@@ -39,9 +39,11 @@ test('version three preserves the library and adds durable arcade records', asyn
   legacy.close()
 
   const upgraded = await openLibraryDatabase()
-  assert.equal(upgraded.version, 3)
+  assert.equal(upgraded.version, 4)
   assert.equal(upgraded.objectStoreNames.contains('library'), true)
   assert.equal(upgraded.objectStoreNames.contains('arcadeRecords'), true)
+  assert.equal(upgraded.objectStoreNames.contains('resultPhotos'), true)
+  assert.equal(upgraded.objectStoreNames.contains('resultPhotoImages'), true)
   const legacySong = await new Promise<{ id: string; name: string }>((resolve, reject) => {
     const request = upgraded.transaction('library').objectStore('library').get('legacy-song')
     request.onsuccess = () => resolve(request.result)

@@ -141,6 +141,56 @@ test('bent arms slightly below shoulder height can navigate but resting arms can
   assert.equal(detectMenuGesture(p), null)
 })
 
+test('a comfortably bent arm below shoulder height navigates without a full extension', () => {
+  const p = pose()
+  Object.assign(p[0], { x: 0.5, y: 0.24 })
+  Object.assign(p[11], { x: 0.4, y: 0.4 })
+  Object.assign(p[12], { x: 0.6, y: 0.4 })
+  Object.assign(p[13], { x: 0.4, y: 0.56 })
+  Object.assign(p[15], { x: 0.4, y: 0.68 })
+  Object.assign(p[14], { x: 0.66, y: 0.54 })
+  Object.assign(p[16], { x: 0.71, y: 0.56 })
+  assert.equal(detectMenuGesture(p), 'next')
+
+  Object.assign(p[14], { x: 0.6, y: 0.56 })
+  Object.assign(p[16], { x: 0.6, y: 0.68 })
+  Object.assign(p[13], { x: 0.34, y: 0.54 })
+  Object.assign(p[15], { x: 0.29, y: 0.56 })
+  assert.equal(detectMenuGesture(p), 'previous')
+
+  Object.assign(p[14], { x: 0.66, y: 0.54 })
+  Object.assign(p[16], { x: 0.71, y: 0.56 })
+  assert.equal(detectMenuGesture(p), null, 'both arms out should not navigate')
+})
+
+test('a bent hand raised near the face selects or goes back, but an arm held sideways does not', () => {
+  const p = pose()
+  Object.assign(p[0], { x: 0.5, y: 0.25 })
+  Object.assign(p[11], { x: 0.4, y: 0.45 })
+  Object.assign(p[12], { x: 0.6, y: 0.45 })
+  Object.assign(p[13], { x: 0.4, y: 0.58 })
+  Object.assign(p[15], { x: 0.4, y: 0.7 })
+  Object.assign(p[14], { x: 0.66, y: 0.49 })
+  Object.assign(p[16], { x: 0.69, y: 0.31 })
+  assert.equal(detectMenuGesture(p), 'confirm')
+
+  Object.assign(p[14], { x: 0.6, y: 0.58 })
+  Object.assign(p[16], { x: 0.6, y: 0.7 })
+  Object.assign(p[13], { x: 0.34, y: 0.49 })
+  Object.assign(p[15], { x: 0.31, y: 0.31 })
+  assert.equal(detectMenuGesture(p), 'back')
+
+  Object.assign(p[14], { x: 0.66, y: 0.49 })
+  Object.assign(p[16], { x: 0.69, y: 0.31 })
+  assert.equal(detectMenuGesture(p), null, 'both hands up should not choose an action')
+
+  Object.assign(p[13], { x: 0.4, y: 0.58 })
+  Object.assign(p[15], { x: 0.4, y: 0.7 })
+  Object.assign(p[14], { x: 0.66, y: 0.54 })
+  Object.assign(p[16], { x: 0.71, y: 0.56 })
+  assert.equal(detectMenuGesture(p), 'next', 'the easier sideways pose must not select')
+})
+
 test('three live beeps precede navigation, then a held pose repeats at a controlled rate', () => {
   let state: GestureHold = { candidate: null, since: 0, latched: false, beeps: 0, lastBeepAt: 0 }
   let reading = advanceGestureHold(state, 'next', 100)

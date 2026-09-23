@@ -9,7 +9,7 @@ import { LandmarkSmoother } from '../pose/filter'
 import { framingProblems } from '../pose/checkup'
 import { FrameMeter, frameTimestampMs, type FrameMetrics } from '../pose/frameMeter'
 import { advanceCalibration, beginCalibration, type CalibrationIssue, type CalibrationState } from '../pose/calibration'
-import { createPlayerLock, matchPlayerLock, registrationCandidates, type ColorSignature, type PlayerLock } from '../pose/playerLock'
+import { createPlayerLock, matchPlayerLock, primarySoloCandidate, registrationCandidates, type ColorSignature, type LockReason, type PlayerLock } from '../pose/playerLock'
 import { CameraRequestTimeoutError, requestCameraStream } from '../lib/cameraStream'
 import { playSfx } from '../lib/sfx'
 import Checkup from './Checkup'
@@ -42,7 +42,7 @@ import type { CueEvent } from '../pose/hitTargets'
 type MirrorMode = 'auto' | 'mirror' | 'direct'
 const READY_HOLD_MS = 1200
 const LIVE_INFERENCE_INTERVAL_MS = 50
-const LIVE_INPUT_WIDTH = 640
+const LIVE_INPUT_WIDTH = 960
 const APPEARANCE_SAMPLE_SIZE = 8
 const EMPTY_GESTURE_HOLD: GestureHold = { candidate: null, since: 0, latched: false, beeps: 0, lastBeepAt: 0 }
 
@@ -98,6 +98,15 @@ interface PlayerSetup {
   inZone: boolean[]
   rightHandRaised: boolean[]
 }
+
+interface PoseDiagnostic {
+  raw: number
+  eligible: number
+  torso: (number | null)[]
+  reason: LockReason | 'registering'
+  gapMs: number
+  recentRejection: LockReason | null
+}
 import type { TargetPose } from './VideoPanel'
 import { recordSession } from '../playkitClient'
 
@@ -122,12 +131,15 @@ interface Props {
   showSkeletons: boolean
   onShowSkeletonsChange?: (visible: boolean) => void
   trackHead?: boolean
+  showPoseDebug?: boolean
+  onPhotoFrameReady?: (capture: (() => HTMLCanvasElement | null) | null) => void
   gamePhase?: GamePhase
   gameRun?: number
   onLobbyChange?: (ready: boolean, players: number) => void
   onGameScores?: (players: PlayerRound[]) => void
   onHit?: (grade: Exclude<HitGrade, 'miss'>, target: CueEvent) => void
   onScoreDebug?: (entries: ScoreDebug[]) => void
+  onSoloPresence?: (present: boolean, nowMs: number) => void
   requireCalibration?: boolean
   registrationPlayers?: 1 | 2
   onRegistrationPlayersChange?: (count: 1 | 2) => void
@@ -157,12 +169,15 @@ export default function WebcamPanel({
   showSkeletons,
   onShowSkeletonsChange,
   trackHead = true,
+  showPoseDebug = false,
+  onPhotoFrameReady,
   gamePhase = 'lobby',
   gameRun = 0,
   onLobbyChange,
   onGameScores,
   onHit,
   onScoreDebug,
+  onSoloPresence,
   requireCalibration = false,
   registrationPlayers = 1,
   onRegistrationPlayersChange,
@@ -181,6 +196,25 @@ export default function WebcamPanel({
   const sectionAccumRef = useRef<Record<string, SectionPractice>>({})
   const sectionClockRef = useRef(0)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const showPoseDebugRef = useRef(showPoseDebug)
+  showPoseDebugRef.current = showPoseDebug
+  useEffect(() => {
+    if (!onPhotoFrameReady) return
+    onPhotoFrameReady(() => {
+      const video = videoRef.current
+      if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight) return null
+      const frame = document.createElement('canvas')
+      frame.width = video.videoWidth
+      frame.height = video.videoHeight
+      const context = frame.getContext('2d')
+      if (!context) return null
+      context.translate(frame.width, 0)
+      context.scale(-1, 1)
+      context.drawImage(video, 0, 0, frame.width, frame.height)
+      return frame
+    })
+    return () => onPhotoFrameReady(null)
+  }, [onPhotoFrameReady])
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const inferenceCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const appearanceCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -197,6 +231,8 @@ export default function WebcamPanel({
   const stableCountRef = useRef({ count: 0, since: 0 })
   const lobbyReadyRef = useRef(false)
   const playerLockRef = useRef<PlayerLock | null>(null)
+  const lastRejectionRef = useRef<{ reason: LockReason; at: number } | null>(null)
+  const poseDiagnosticRef = useRef<PoseDiagnostic | null>(null)
   const registrationPlayersRef = useRef(registrationPlayers)
   registrationPlayersRef.current = registrationPlayers
   const registeredPlayerCountRef = useRef(1)
@@ -205,6 +241,8 @@ export default function WebcamPanel({
   const pauseHoldRef = useRef<ReturnType<typeof advancePauseHold>['hold']>(null)
   const gestureContextRef = useRef(gestureContext)
   const onGestureActionRef = useRef(onGestureAction)
+  const onSoloPresenceRef = useRef(onSoloPresence)
+  onSoloPresenceRef.current = onSoloPresence
   const soundMutedRef = useRef(soundMuted)
   // Latest reading, so the guided check can sample without its own detector.
   const latestRef = useRef<{ feature: PoseFeature; framing: string[] } | null>(null)
@@ -234,6 +272,7 @@ export default function WebcamPanel({
   const [metrics, setMetrics] = useState<FrameMetrics | null>(null)
   const [calibration, setCalibration] = useState<CalibrationState | null>(null)
   const [trackingLost, setTrackingLost] = useState(false)
+  const [poseDiagnostic, setPoseDiagnostic] = useState<PoseDiagnostic | null>(null)
   const [playerSetup, setPlayerSetup] = useState<PlayerSetup>({
     count: registrationPlayers,
     detected: [],
@@ -268,6 +307,8 @@ export default function WebcamPanel({
 
   const resetPlayers = useCallback(() => {
     playerLockRef.current = null
+    lastRejectionRef.current = null
+    poseDiagnosticRef.current = null
     registeredPlayerCountRef.current = registrationPlayersRef.current
     readyHoldRef.current = [0, 0]
     stableCountRef.current = { count: 0, since: performance.now() }
@@ -292,9 +333,12 @@ export default function WebcamPanel({
     onLobbyChange?.(false, 0)
   }, [onCalibrationChange, onLobbyChange])
 
+  // Solo registration survives returning from a round to the menus. Two-player
+  // keeps its existing lobby reset until its lock flow is redesigned.
+  const registrationPhase = registrationPlayers === 2 ? gamePhase : 'lobby'
   useEffect(() => {
-    if (running && gamePhase === 'lobby') resetPlayers()
-  }, [registrationPlayers, running, gamePhase, resetPlayers])
+    if (running && registrationPhase === 'lobby') resetPlayers()
+  }, [registrationPlayers, running, registrationPhase, resetPlayers])
 
   useEffect(() => {
     if (!gestureHoldRef.current.latched) {
@@ -343,7 +387,7 @@ export default function WebcamPanel({
     setStarting(true)
     setError(null)
     try {
-      landmarkerRef.current ??= await createPoseLandmarker(2)
+      landmarkerRef.current ??= await createPoseLandmarker(2, 'full')
       const stream = await requestCameraStream(navigator.mediaDevices, {
         video: {
           width: { ideal: 1280 },
@@ -366,6 +410,8 @@ export default function WebcamPanel({
       readyHoldRef.current = [0, 0]
       stableCountRef.current = { count: 0, since: performance.now() }
       playerLockRef.current = null
+      lastRejectionRef.current = null
+      poseDiagnosticRef.current = null
       lobbyReadyRef.current = false
       gestureHoldRef.current = { ...EMPTY_GESTURE_HOLD }
       setLobbyReady(false)
@@ -422,6 +468,9 @@ export default function WebcamPanel({
     setLobbyReady(false)
     setPlayerSetup({ count: registrationPlayersRef.current, detected: [], progress: [], inZone: [], rightHandRaised: [] })
     playerLockRef.current = null
+    lastRejectionRef.current = null
+    poseDiagnosticRef.current = null
+    setPoseDiagnostic(null)
     livePlayerCountRef.current = 0
     setTrackingLost(false)
     onLobbyChange?.(false, 0)
@@ -482,12 +531,35 @@ export default function WebcamPanel({
         ) }))
       const lock = playerLockRef.current
       const registrationIndices = lock ? [] : registrationCandidates(detected.map((player) => player.pose), registrationPlayersRef.current)
-      const match = lock ? matchPlayerLock(lock, detected.map((player) => player.pose), frameNow, detected.map((player) => player.appearance)) : null
+      const soloReady = registrationPlayersRef.current === 1 && lobbyReadyRef.current
+      const soloIndex = soloReady ? primarySoloCandidate(detected.map((player) => player.pose)) : null
+      const match = lock && !soloReady ? matchPlayerLock(lock, detected.map((player) => player.pose), frameNow, detected.map((player) => player.appearance)) : null
+      if (showPoseDebugRef.current && registrationPlayersRef.current === 1) {
+        const reason = soloReady ? (soloIndex === null ? 'no pose' : 'matched') : match?.reasons[0] ?? 'registering'
+        if (reason !== 'matched' && reason !== 'registering') lastRejectionRef.current = { reason, at: frameNow }
+        const matchedIndex = soloReady ? soloIndex : match?.indices[0]
+        const rawPose = matchedIndex === null || matchedIndex === undefined
+          ? res.landmarks[0] : detected[matchedIndex]?.pose
+        poseDiagnosticRef.current = {
+          raw: res.landmarks.length,
+          eligible: detected.length,
+          torso: [LM.lShoulder, LM.rShoulder, LM.lHip, LM.rHip]
+            .map((index) => {
+              const visibility = rawPose?.[index]?.visibility
+              return visibility === undefined ? null : Math.round(visibility * 100)
+            }),
+          reason,
+          gapMs: soloReady ? 0 : lock ? Math.round(frameNow - (match?.state.slots[0].lastSeenAt ?? lock.slots[0].lastSeenAt)) : 0,
+          recentRejection: lastRejectionRef.current && frameNow - lastRejectionRef.current.at < 4000
+            ? lastRejectionRef.current.reason : null,
+        }
+      }
       if (lock && match && match.indices[0] !== null && frameNow - lock.slots[0].lastSeenAt > 750) {
         gestureHoldRef.current = { ...EMPTY_GESTURE_HOLD, candidate: 'confirm', since: frameNow, latched: true }
       }
       if (match) playerLockRef.current = match.state
-      const matched = (match?.indices ?? registrationIndices).map((index) => index === null ? null : detected[index])
+      const indices = soloReady ? [soloIndex] : match?.indices ?? registrationIndices
+      const matched = indices.map((index) => index === null ? null : detected[index])
       const count = matched.filter(Boolean).length
       livePlayerCountRef.current = count
       const registeredPlayerCount = registeredPlayerCountRef.current
@@ -638,6 +710,10 @@ export default function WebcamPanel({
         })
       }
 
+      if (lobbyReadyRef.current && registrationPlayersRef.current === 1) {
+        onSoloPresenceRef.current?.(playerFrames[0] !== null, frameNow)
+      }
+
       if (gamePhase === 'playing' && isGameRunReady(target.gameRun, gameRun) && target.cueChart?.length) {
         const cameraTime = frameNow / 1000
         for (let index = 0; index < registeredPlayerCount; index++) {
@@ -680,6 +756,7 @@ export default function WebcamPanel({
             },
             target.time,
             target.cueChart,
+            registrationPlayersRef.current === 1 ? frame !== null : undefined,
           )
           roundsRef.current[index] = after
           if (after !== before) {
@@ -746,6 +823,7 @@ export default function WebcamPanel({
       const now = performance.now()
       if (now - lastUiRef.current > 200) {
         lastUiRef.current = now
+        if (showPoseDebugRef.current && registrationPlayersRef.current === 1) setPoseDiagnostic(poseDiagnosticRef.current)
         setScore(emaRef.current === null ? null : Math.round(emaRef.current))
         setProblems(frameProblems)
         setLag(lagRef.current)
@@ -756,7 +834,7 @@ export default function WebcamPanel({
             : mirrorModeRef.current === 'mirror',
         )
         if (gamePhase === 'lobby') setPlayerSetup(setup)
-        setTrackingLost(!!playerLockRef.current?.slots.some((slot) => frameNow - slot.lastSeenAt > 750))
+        setTrackingLost(registrationPlayersRef.current === 2 && !!playerLockRef.current?.slots.some((slot) => frameNow - slot.lastSeenAt > 750))
         if (calibrationRef.current?.phase === 'framing' || calibrationRef.current?.phase === 'movement') {
           setCalibration(calibrationRef.current)
         }
@@ -978,6 +1056,16 @@ export default function WebcamPanel({
         </div>}
       </div>
     </section>
+    {showPoseDebug && running && registrationPlayers === 1 && poseDiagnostic && createPortal(
+      <div className={`pose-debug${poseDiagnostic.reason === 'matched' ? ' is-matched' : ''}`} aria-label="Pose tracking diagnostics">
+        <strong>POSE DEBUG · FULL · {LIVE_INPUT_WIDTH}px</strong>
+        <span>Raw {poseDiagnostic.raw} · eligible {poseDiagnostic.eligible}</span>
+        <span>Torso visibility % · shoulders {poseDiagnostic.torso[0] ?? '—'}/{poseDiagnostic.torso[1] ?? '—'} · hips {poseDiagnostic.torso[2] ?? '—'}/{poseDiagnostic.torso[3] ?? '—'}</span>
+        <span>Selection: {poseDiagnostic.reason} · gap {poseDiagnostic.gapMs}ms</span>
+        {poseDiagnostic.recentRejection && <span>Recent rejection: {poseDiagnostic.recentRejection}</span>}
+      </div>,
+      document.body,
+    )}
     {showGestureCue && createPortal(
       <div className={`gesture-cue gesture-cue-${activeGesture}`}>
         <div className="gesture-cue-heading">

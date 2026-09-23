@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { PoseTrack } from '../src/pose/track.ts'
-import { buildCueChart, upcomingCues, type CueEvent } from '../src/pose/hitTargets.ts'
+import { buildCueChart, removeOverlappingLimbCues, upcomingCues, type CueEvent } from '../src/pose/hitTargets.ts'
 
 const fps = 10
 const frames = 40
@@ -101,7 +101,7 @@ test('rejects Clap when either wrist is not confidently visible', () => {
   assert.equal(buildCueChart(track, 'hard').some((cue) => cue.kind === 'clap'), false)
 })
 
-test('detects a torso sway endpoint as Swing', () => {
+test('torso sway does not create a Body score note', () => {
   const track = makeTrack((data, frame) => {
     const shift = frame <= 6 ? frame * 0.014 : Math.max(0, 12 - frame) * 0.014
     for (const index of [11, 12, 23, 24]) {
@@ -109,10 +109,30 @@ test('detects a torso sway endpoint as Swing', () => {
       setPoint(data, frame, index, data[offset] + shift, data[offset + 1])
     }
   })
-  const cue = buildCueChart(track, 'hard').find((value) => value.kind === 'swing')
-  assert.ok(cue)
-  assert.equal(cue.direction, 'right')
-  assert.ok(cue.displacement >= 0.3)
+  assert.equal(buildCueChart(track, 'hard').length, 0)
+})
+
+test('notes on one limb cannot share visible time, including a hold and a clap', () => {
+  const cues: CueEvent[] = [
+    { kind: 'spot', time: 1.5, poseTime: 1.5, joint: 'rightFoot', x: 0.7, y: 0.8, feature: {}, confidence: 1 },
+    { kind: 'hold', time: 2, poseTime: 1, duration: 1, joint: 'leftHand', x: 0.2, y: 0.4, feature: {}, confidence: 1 },
+    { kind: 'spot', time: 2.4, poseTime: 2.4, joint: 'leftHand', x: 0.3, y: 0.4, feature: {}, confidence: 1 },
+    { kind: 'clap', time: 2.6, poseTime: 2.6, x: 0.5, y: 0.4, expectedGap: 0.2, feature: {}, confidence: 1 },
+    { kind: 'spot', time: 3.1, poseTime: 3.1, joint: 'rightHand', x: 0.8, y: 0.4, feature: {}, confidence: 1 },
+    { kind: 'spot', time: 3.6, poseTime: 3.6, joint: 'rightFoot', x: 0.7, y: 0.8, feature: {}, confidence: 1 },
+  ]
+  assert.deepEqual(removeOverlappingLimbCues(cues), [cues[0], cues[1], cues[4], cues[5]])
+})
+
+test('a clap reserves both hand lanes but not the head or feet', () => {
+  const cues: CueEvent[] = [
+    { kind: 'clap', time: 1, poseTime: 1, x: 0.5, y: 0.4, expectedGap: 0.2, feature: {}, confidence: 1 },
+    { kind: 'spot', time: 1.4, poseTime: 1.4, joint: 'leftHand', x: 0.2, y: 0.4, feature: {}, confidence: 1 },
+    { kind: 'spot', time: 1.4, poseTime: 1.4, joint: 'rightHand', x: 0.8, y: 0.4, feature: {}, confidence: 1 },
+    { kind: 'spot', time: 1.4, poseTime: 1.4, joint: 'head', x: 0.5, y: 0.2, feature: {}, confidence: 1 },
+    { kind: 'spot', time: 2.1, poseTime: 2.1, joint: 'rightHand', x: 0.8, y: 0.4, feature: {}, confidence: 1 },
+  ]
+  assert.deepEqual(removeOverlappingLimbCues(cues), [cues[0], cues[3], cues[4]])
 })
 
 test('snaps cue judgment time to the beat while preserving pose time', () => {
@@ -141,7 +161,7 @@ test('difficulty produces a nondecreasing number of cues', () => {
   assert.ok(normal <= hard)
 })
 
-test('shows one upcoming cue per body channel and keeps Hold visible for its duration', () => {
+test('shows one upcoming cue per limb channel and keeps Hold visible for its duration', () => {
   const cues: CueEvent[] = [
     { kind: 'hold', time: 2, poseTime: 1, duration: 1, joint: 'leftHand', x: 0.2, y: 0.4, feature: {}, confidence: 1 },
     { kind: 'spot', time: 1.2, poseTime: 1.2, joint: 'rightHand', x: 0.8, y: 0.4, feature: {}, confidence: 1 },

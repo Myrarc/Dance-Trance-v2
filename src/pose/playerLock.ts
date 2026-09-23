@@ -29,6 +29,8 @@ export interface PlayerLock {
   slots: LockedPlayer[]
 }
 
+export type LockReason = 'matched' | 'no pose' | 'torso' | 'scale' | 'appearance' | 'relock gesture' | 'relock hold' | 'distance' | 'assigned elsewhere'
+
 const LOST_AFTER_MS = 750
 const RELOCK_HOLD_MS = 900
 
@@ -81,29 +83,30 @@ export function matchPlayerLock(
   poses: NormalizedLandmark[][],
   nowMs: number,
   appearances: (ColorSignature | null)[] = [],
-): { state: PlayerLock; indices: (number | null)[] } {
+): { state: PlayerLock; indices: (number | null)[]; reasons: LockReason[] } {
   const readings = poses.map(anchor)
-  const costs = lock.slots.map((slot, slotIndex) => readings.map((reading, index) => {
-    if (!reading) return Infinity
+  const decisions = lock.slots.map((slot, slotIndex) => readings.map((reading, index): { cost: number; reason: LockReason } => {
+    if (!reading) return { cost: Infinity, reason: 'torso' }
     const ratio = reading.scale / slot.registeredScale
-    if (ratio < 0.7 || ratio > 1.5) return Infinity
+    if (ratio < 0.7 || ratio > 1.5) return { cost: Infinity, reason: 'scale' }
     const appearance = appearances[index]
     if (slot.appearance && appearance &&
       Math.hypot(slot.appearance.r - appearance.r, slot.appearance.g - appearance.g, slot.appearance.b - appearance.b) / Math.hypot(255, 255, 255) > 0.32) {
-      return Infinity
+      return { cost: Infinity, reason: 'appearance' }
     }
     const dt = Math.max(0, nowMs - slot.lastSeenAt) / 1000
     const longLoss = nowMs - slot.lastSeenAt > LOST_AFTER_MS
     if (longLoss && (!isRightHandRaised(poses[index]) || !inPlayerZone(playerScreenX(poses[index]) ?? -1, slotIndex, lock.slots.length))) {
-      return Infinity
+      return { cost: Infinity, reason: 'relock gesture' }
     }
     const predictedX = slot.x + slot.velocityX * Math.min(dt, 0.2)
     const predictedY = slot.y + slot.velocityY * Math.min(dt, 0.2)
     const distance = Math.hypot(reading.x - predictedX, reading.y - predictedY)
     const limit = Math.min(0.34, 0.10 + dt * 0.6)
-    if (distance > limit) return Infinity
-    return distance / limit + Math.abs(Math.log(ratio))
+    if (distance > limit) return { cost: Infinity, reason: 'distance' }
+    return { cost: distance / limit + Math.abs(Math.log(ratio)), reason: 'matched' }
   }))
+  const costs = decisions.map((row) => row.map((decision) => decision.cost))
 
   let chosen: (number | null)[] = lock.slots.map(() => null)
   let lowest = Infinity
@@ -123,11 +126,14 @@ export function matchPlayerLock(
   visit(0, new Set(), [], 0)
 
   const indices: (number | null)[] = []
+  const reasons: LockReason[] = []
   const slots = lock.slots.map((slot, index) => {
     const detectionIndex = chosen[index]
     const reading = detectionIndex === null ? null : readings[detectionIndex]
     if (!reading) {
       indices.push(null)
+      const reason = decisions[index][0]?.reason ?? 'no pose'
+      reasons.push(reason === 'matched' ? 'assigned elsewhere' : reason)
       return { ...slot, relockSince: null, relockX: null, relockY: null }
     }
     const longLoss = nowMs - slot.lastSeenAt > LOST_AFTER_MS
@@ -137,15 +143,31 @@ export function matchPlayerLock(
       const relockSince = sameCandidate ? slot.relockSince ?? nowMs : nowMs
       if (nowMs - relockSince < RELOCK_HOLD_MS) {
         indices.push(null)
+        reasons.push('relock hold')
         return { ...slot, relockSince, relockX: reading.x, relockY: reading.y }
       }
     }
     const dt = Math.max(0.001, (nowMs - slot.lastSeenAt) / 1000)
     indices.push(detectionIndex)
+    reasons.push('matched')
     return { ...slot, ...reading,
       velocityX: longLoss ? 0 : Math.max(-1.5, Math.min(1.5, slot.velocityX * 0.6 + (reading.x - slot.x) / dt * 0.4)),
       velocityY: longLoss ? 0 : Math.max(-1.5, Math.min(1.5, slot.velocityY * 0.6 + (reading.y - slot.y) / dt * 0.4)),
       lastSeenAt: nowMs, relockSince: null, relockX: null, relockY: null }
   })
-  return { state: { slots }, indices }
+  return { state: { slots }, indices, reasons }
+}
+
+/** Solo play follows the largest usable body, without retaining an identity lock. */
+export function primarySoloCandidate(poses: NormalizedLandmark[][]): number | null {
+  let best: number | null = null
+  let bestScale = 0
+  poses.forEach((pose, index) => {
+    const reading = anchor(pose)
+    if (reading && reading.scale > bestScale) {
+      best = index
+      bestScale = reading.scale
+    }
+  })
+  return best
 }

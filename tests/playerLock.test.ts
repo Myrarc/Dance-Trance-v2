@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createPlayerLock, matchPlayerLock, registrationCandidates } from '../src/pose/playerLock.ts'
+import { createPlayerLock, matchPlayerLock, primarySoloCandidate, registrationCandidates } from '../src/pose/playerLock.ts'
 
 function pose(center: number, scale = 1, gesture: 'out' | 'down' | 'rightUp' = 'out') {
   const points = Array.from({ length: 33 }, () => ({ x: center, y: 0.5, z: 0, visibility: 1 }))
@@ -85,4 +85,36 @@ test('continuous crossing preserves player slots instead of re-sorting left to r
     assert.deepEqual(result.indices, [1, 0])
     lock = result.state
   })
+})
+
+test('solo play follows the largest visible torso without a relock gesture', () => {
+  assert.equal(primarySoloCandidate([pose(0.2, 0.5), pose(0.8, 1, 'down')]), 1)
+  assert.equal(primarySoloCandidate([pose(0.8, 1, 'down')]), 0)
+  assert.equal(primarySoloCandidate([]), null)
+  const hidden = pose(0.5)
+  hidden[11].visibility = 0.2
+  assert.equal(primarySoloCandidate([hidden]), null)
+})
+
+test('lock diagnostics distinguish no model pose from an unusable torso', () => {
+  const lock = createPlayerLock([pose(0.5)], 0)
+  assert.deepEqual(matchPlayerLock(lock, [], 50).reasons, ['no pose'])
+  const unclear = pose(0.5)
+  unclear[23].visibility = 0.4
+  assert.deepEqual(matchPlayerLock(lock, [unclear], 50).reasons, ['torso'])
+})
+
+test('lock diagnostics name appearance and scale rejection without changing matching', () => {
+  const red = { r: 220, g: 35, b: 35 }
+  const blue = { r: 35, g: 45, b: 220 }
+  const lock = createPlayerLock([pose(0.5)], 0, [red])
+  assert.deepEqual(matchPlayerLock(lock, [pose(0.5)], 50, [blue]).reasons, ['appearance'])
+  assert.deepEqual(matchPlayerLock(lock, [pose(0.5, 0.5)], 50, [red]).reasons, ['scale'])
+  assert.deepEqual(matchPlayerLock(lock, [pose(0.5)], 50, [red]).reasons, ['matched'])
+})
+
+test('lock diagnostics show the relock gate while the player remains unmatched', () => {
+  const lock = createPlayerLock([pose(0.5)], 0)
+  assert.deepEqual(matchPlayerLock(lock, [pose(0.5, 1, 'down')], 900).reasons, ['relock gesture'])
+  assert.deepEqual(matchPlayerLock(lock, [pose(0.5, 1, 'rightUp')], 900).reasons, ['relock hold'])
 })

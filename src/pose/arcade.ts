@@ -1,7 +1,7 @@
 import { SIDE_COLORS } from './skeleton'
-import type { CueEvent, HitJoint } from './hitTargets'
+import { HIT_LEAD_S, type CueEvent, type HitJoint } from './hitTargets'
 
-export const HIT_LEAD_S = 0.8
+export { HIT_LEAD_S } from './hitTargets'
 
 export const HIT_COLORS: Record<HitJoint, string> = {
   head: '#7df4ff',
@@ -13,7 +13,6 @@ export const HIT_COLORS: Record<HitJoint, string> = {
 
 export function cueColor(cue: CueEvent) {
   if (cue.kind === 'clap') return '#ee665f'
-  if (cue.kind === 'swing') return '#2cb8ba'
   return HIT_COLORS[cue.joint]
 }
 
@@ -154,7 +153,6 @@ export function drawCueGlyph(
   y: number,
   radius: number,
   currentTime: number,
-  mirrored: boolean,
 ) {
   if (cue.kind === 'spot') return
   const color = cueColor(cue)
@@ -189,21 +187,6 @@ export function drawCueGlyph(
       ctx.lineTo(outer, y + radius * 0.42)
       ctx.stroke()
     }
-  } else {
-    const direction = (cue.direction === 'right') !== mirrored ? 1 : -1
-    const startX = x - direction * radius * 0.72
-    const endX = x + direction * radius * 0.72
-    ctx.beginPath()
-    ctx.moveTo(startX, y)
-    ctx.lineTo(endX, y)
-    ctx.lineTo(endX - direction * radius * 0.34, y - radius * 0.3)
-    ctx.moveTo(endX, y)
-    ctx.lineTo(endX - direction * radius * 0.34, y + radius * 0.3)
-    ctx.stroke()
-    ctx.font = `800 ${Math.max(14, radius * 0.45)}px sans-serif`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'top'
-    ctx.fillText('BODY', x, y + radius * 0.55)
   }
   ctx.restore()
 }

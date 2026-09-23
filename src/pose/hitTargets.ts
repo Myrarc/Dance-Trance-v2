@@ -3,10 +3,10 @@ import type { PoseTrack } from './track'
 
 export type Difficulty = 'easy' | 'normal' | 'hard'
 export type HitJoint = 'head' | 'leftHand' | 'rightHand' | 'leftFoot' | 'rightFoot'
-export type SwingDirection = 'left' | 'right'
+export const HIT_LEAD_S = 0.8
 
 interface CueBase {
-  kind: 'spot' | 'hold' | 'clap' | 'swing'
+  kind: 'spot' | 'hold' | 'clap'
   time: number
   poseTime: number
   x: number
@@ -33,14 +33,7 @@ export interface ClapCue extends CueBase {
   feature: PoseFeature
 }
 
-export interface SwingCue extends CueBase {
-  kind: 'swing'
-  direction: SwingDirection
-  displacement: number
-  duration: number
-}
-
-export type CueEvent = SpotCue | HoldCue | ClapCue | SwingCue
+export type CueEvent = SpotCue | HoldCue | ClapCue
 
 interface Point {
   x: number
@@ -61,9 +54,6 @@ const HOLD_MAX_S = 1.6
 const CLAP_GAP = 0.4
 const CLAP_CLOSE = 0.25
 const CLAP_LOOKBACK_S = 0.5
-const SWING_DISTANCE = 0.3
-const SWING_MIN_S = 0.4
-const SWING_MAX_S = 1.2
 
 const POINTS: Record<HitJoint, number[]> = {
   head: [7, 8],
@@ -84,7 +74,6 @@ const MOVE_THRESHOLD: Record<HitJoint, number> = {
 const KIND_PRIORITY: Record<CueEvent['kind'], number> = {
   clap: 4,
   hold: 3,
-  swing: 2,
   spot: 1,
 }
 
@@ -133,17 +122,6 @@ function bodyScale(track: PoseTrack, frame: number): number | null {
   if (!leftShoulder || !rightShoulder || !leftHip || !rightHip) return null
   const height = distance(midpoint(leftShoulder, rightShoulder), midpoint(leftHip, rightHip))
   return height > 0.02 ? height : null
-}
-
-function torsoCenter(track: PoseTrack, frame: number): Point | null {
-  const points = [11, 12, 23, 24]
-    .map((index) => landmark(track, frame, index))
-    .filter((value) => value !== null)
-  if (points.length < 3) return null
-  return {
-    x: points.reduce((sum, value) => sum + value.x, 0) / points.length,
-    y: points.reduce((sum, value) => sum + value.y, 0) / points.length,
-  }
 }
 
 function wristGap(track: PoseTrack, frame: number): { gap: number; midpoint: Point } | null {
@@ -286,57 +264,6 @@ function buildClaps(track: PoseTrack): ClapCue[] {
   return claps
 }
 
-function buildSwings(track: PoseTrack): SwingCue[] {
-  const swings: SwingCue[] = []
-  const minFrames = Math.max(1, Math.round(SWING_MIN_S * track.fps))
-  const maxFrames = Math.max(minFrames, Math.round(SWING_MAX_S * track.fps))
-  const cooldown = Math.max(1, Math.round(0.55 * track.fps))
-  let last = -cooldown
-
-  for (let frame = minFrames + 1; frame < track.frames - 1; frame++) {
-    if (frame - last < cooldown) continue
-    const current = torsoCenter(track, frame)
-    const previous = torsoCenter(track, frame - 1)
-    const next = torsoCenter(track, frame + 1)
-    const scale = bodyScale(track, frame)
-    if (!current || !previous || !next || !scale) continue
-
-    let bestStart = -1
-    let bestDisplacement = 0
-    for (let start = Math.max(0, frame - maxFrames); start <= frame - minFrames; start++) {
-      const from = torsoCenter(track, start)
-      const fromScale = bodyScale(track, start)
-      if (!from || !fromScale) continue
-      const displacement = (current.x - from.x) / ((scale + fromScale) / 2)
-      if (Math.abs(displacement) > Math.abs(bestDisplacement)) {
-        bestDisplacement = displacement
-        bestStart = start
-      }
-    }
-    if (bestStart < 0 || Math.abs(bestDisplacement) < SWING_DISTANCE) continue
-    const incoming = current.x - previous.x
-    const outgoing = next.x - current.x
-    const slowed = Math.abs(outgoing) < Math.max(0.001, Math.abs(incoming) * 0.55)
-    const reversed = incoming * outgoing < 0
-    if (!slowed && !reversed) continue
-
-    const time = frame / track.fps
-    swings.push({
-      kind: 'swing',
-      time,
-      poseTime: time,
-      x: current.x,
-      y: current.y,
-      direction: bestDisplacement < 0 ? 'left' : 'right',
-      displacement: bestDisplacement,
-      duration: (frame - bestStart) / track.fps,
-      confidence: clamp01(Math.abs(bestDisplacement) / 0.6),
-    })
-    last = frame
-  }
-  return swings
-}
-
 function snapToBeat(track: PoseTrack, cue: CueEvent): CueEvent | null {
   if (!track.beats?.length) return cue
   let nearest = 0
@@ -353,7 +280,7 @@ function snapToBeat(track: PoseTrack, cue: CueEvent): CueEvent | null {
 
 function cueChannel(cue: CueEvent) {
   if (cue.kind === 'spot' || cue.kind === 'hold') return cue.joint
-  return cue.kind === 'clap' ? 'hands' : 'body'
+  return 'hands'
 }
 
 function rank(a: CueEvent, b: CueEvent) {
@@ -366,7 +293,6 @@ function filterDifficulty(track: PoseTrack, cues: CueEvent[], difficulty: Diffic
   const buckets = new Map<number, CueEvent[]>()
 
   for (const cue of cues) {
-    if (difficulty === 'easy' && cue.kind === 'swing') continue
     let bucket: number
     if (track.beats?.length) {
       let nearest = 0
@@ -395,6 +321,18 @@ function filterDifficulty(track: PoseTrack, cues: CueEvent[], difficulty: Diffic
   return selected.sort((a, b) => a.time - b.time || rank(a, b))
 }
 
+/** A note owns each limb it uses for its full on-screen span. Charts arrive in time order. */
+export function removeOverlappingLimbCues(cues: CueEvent[]): CueEvent[] {
+  const busyUntil = new Map<HitJoint, number>()
+  return cues.filter((cue) => {
+    const limbs: HitJoint[] = cue.kind === 'clap' ? ['leftHand', 'rightHand'] : [cue.joint]
+    const visibleFrom = cue.time - (cue.kind === 'hold' ? cue.duration : 0) - HIT_LEAD_S
+    if (limbs.some((limb) => visibleFrom < (busyUntil.get(limb) ?? -Infinity))) return false
+    for (const limb of limbs) busyUntil.set(limb, cue.time + 0.12)
+    return true
+  })
+}
+
 /** Build an in-memory gameplay chart from an already analysed pose track. */
 export function buildCueChart(
   track: PoseTrack,
@@ -404,7 +342,6 @@ export function buildCueChart(
   const spots = buildSpots(track)
   const holds = buildHolds(track, spots)
   const claps = buildClaps(track)
-  const swings = buildSwings(track)
   const withoutReplacedSpots = spots.filter((spot) => {
     if (holds.some((hold) => hold.joint === spot.joint && Math.abs(hold.poseTime - spot.poseTime) <= 0.12)) return false
     if (
@@ -413,11 +350,11 @@ export function buildCueChart(
     ) return false
     return true
   })
-  const snapped = [...withoutReplacedSpots, ...holds, ...claps, ...swings]
+  const snapped = [...withoutReplacedSpots, ...holds, ...claps]
     .map((cue) => snapToBeat(track, cue))
     .filter((cue) => cue !== null)
     .filter((cue) => trackHead || !('joint' in cue) || cue.joint !== 'head')
-  return filterDifficulty(track, snapped, difficulty)
+  return removeOverlappingLimbCues(filterDifficulty(track, snapped, difficulty))
 }
 
 /** One imminent cue per body channel keeps the playfield readable. */

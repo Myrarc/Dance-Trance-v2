@@ -3,6 +3,7 @@ import type { TargetPose } from './components/VideoPanel'
 import type { ScoreDebug } from './components/WebcamPanel'
 import AccountBar from './components/AccountBar'
 import Library from './components/Library'
+import ResultPhotoGallery from './components/ResultPhotoGallery'
 import UpdateToast from './components/UpdateToast'
 import { Brand, HomeScreen, PauseOverlay, ResultsScreen, SettingsScreen, type ResultRecord } from './components/GameShell'
 import { T, L, useLangTick, LangGlobe, getLang, setLang } from './i18n'
@@ -19,6 +20,7 @@ import {
   syncArcadeRecords, syncLibrary, type VideoStats,
 } from './playkitClient'
 import { MENU_THEMES, loadGameSettings, saveGameSettings, type GameSettings } from './lib/gameSettings'
+import { startMenuTheme } from './lib/menuMusic'
 import { sampleBeat } from './lib/attractBeat'
 import { playSfx } from './lib/sfx'
 import { accuracy, type GamePhase, type HitGrade, type PlayerRound } from './pose/gameplay'
@@ -27,6 +29,9 @@ import type { GestureContext, MenuGesture } from './pose/gestures'
 import { gameReducer, initialGameState, type AppScreen } from './game/state'
 import { advanceRoundRecovery, effectiveTrackingPhase, initialTrackingRecovery, recoveryCountdown } from './game/trackingRecovery'
 import { mergeCloudRecords, recordCompletedRound, recordsForCloud, type ArcadeRecord } from './game/records'
+import { photoPrompt } from './game/resultPhoto'
+import { composeResultPhoto } from './lib/resultPhotoImage'
+import { saveResultPhoto } from './lib/resultPhotos'
 
 const VideoPanel = lazy(() => import('./components/VideoPanel'))
 const WebcamPanel = lazy(() => import('./components/WebcamPanel'))
@@ -89,7 +94,12 @@ export default function App() {
   const [previewPaused, setPreviewPaused] = useState(false)
   const [filePickerNotice, setFilePickerNotice] = useState(false)
   const [cameraRunning, setCameraRunning] = useState(false)
+  const [resultPhotoRound, setResultPhotoRound] = useState(0)
   const targetRef = useRef<TargetPose>({ feature: null, history: [], time: 0, gameRun: 0, facing: null, sectionId: null })
+  const capturePhotoFrameRef = useRef<(() => HTMLCanvasElement | null) | null>(null)
+  const onPhotoFrameReady = useCallback((capture: (() => HTMLCanvasElement | null) | null) => {
+    capturePhotoFrameRef.current = capture
+  }, [])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const fileDestinationRef = useRef<AppScreen>('arcade')
   const hitFeedbackIdRef = useRef(0)
@@ -144,6 +154,14 @@ export default function App() {
   }, [navigation.screen])
 
   const go = (type: 'openHome' | 'openArcade' | 'openPractice' | 'openLibrary' | 'openSettings') => {
+    if (type === 'openHome' && activeScreen === 'arcade' && arcadePhase === 'results' && settings.menuTheme !== 'off') {
+      const audio = menuMusicRef.current
+      if (audio) void startMenuTheme(audio, {
+        restart: true,
+        volume: MENU_MUSIC_VOLUME,
+        output: beatAudioRef.current?.context,
+      }).catch(() => undefined)
+    }
     playSfx('menu', settings.soundMuted)
     if (type === 'openArcade') {
       setSrc(null)
@@ -328,6 +346,7 @@ export default function App() {
 
   const finishRound = async () => {
     if (arcadePhase !== 'playing') return
+    setResultPhotoRound((round) => round + 1)
     dispatch({ type: 'finishRound' })
     if (!current || !gamePlayers.length) return
     const completedAt = Date.now()
@@ -348,6 +367,30 @@ export default function App() {
     setRecords(fresh)
     playSfx(outcomes.some((outcome) => outcome.isNewBest) ? 'record' : 'result', settings.soundMuted)
     void syncArcadeRecords(recordsForCloud(fresh))
+  }
+
+  const captureResultPhoto = async () => {
+    const frame = capturePhotoFrameRef.current?.()
+    if (!frame) throw new Error('Camera frame is unavailable')
+    const image = await composeResultPhoto(frame, {
+      songName: current?.name ?? T('Your dance'),
+      difficulty,
+      players: gamePlayers.map((player) => ({
+        score: player.score,
+        accuracy: accuracy(player),
+        maxCombo: player.maxCombo,
+        perfect: player.perfect,
+        good: player.good,
+        miss: player.miss,
+      })),
+    })
+    if (!gamePlayers.length) throw new Error('Final score is unavailable')
+    await saveResultPhoto({
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+      songName: current?.name ?? T('Your dance'),
+      score: gamePlayers[0].score,
+    }, image)
   }
 
   const updateLobby = useCallback((ready: boolean, players: number) => {
@@ -494,7 +537,7 @@ export default function App() {
     if (!menuTheme) { audio.pause(); return }
     if (menuMusicActive) {
       if (audio.paused) audio.volume = 0
-      void audio.play().catch(() => undefined)
+      void startMenuTheme(audio, { output: beatAudioRef.current?.context }).catch(() => undefined)
       return fadeVolume(audio, MENU_MUSIC_VOLUME)
     }
     if (!audio.paused) return fadeVolume(audio, 0, () => audio.pause())
@@ -803,9 +846,9 @@ export default function App() {
       <div className={`destination-wrap ${['countdown', 'playing', 'paused'].includes(arcadePhase) ? 'game-screen-active' : ''}`}>
         {renderHeader('Arcade')}
         {arcadePhase === 'playing' && <section className="game-flow game-playing" aria-live="polite"><div className="game-score-strip">{(gamePlayers.length ? gamePlayers : Array.from({ length: Math.max(1, lobby.players) }, () => null)).map((player, index) => <span key={index}><b>P{index + 1}</b> {player?.score.toLocaleString() ?? '0'}<small>{player?.combo ? `${player.combo}× ${T('combo')}` : T('build your combo')}</small>{import.meta.env.DEV && scoreDebug[index] && <small className="score-debug">{scoreDebug[index].cue} · {scoreDebug[index].grade} · {Math.round(scoreDebug[index].lag * 1000)}ms</small>}</span>)}</div><button className="pause-button" onClick={() => dispatch({ type: 'pause' })} aria-label={T('Pause')}>Ⅱ</button></section>}
-        {arcadePhase === 'results' && <section className="game-flow game-results" aria-live="polite" data-gesture-surface><ResultsScreen players={gamePlayers} difficulty={difficulty} records={resultRecords} reducedEffects={settings.reducedEffects} onReplay={startRound} onChooseSong={chooseSong} onHome={() => dispatch({ type: 'openHome' })} /></section>}
+        {arcadePhase === 'results' && <section className="game-flow game-results" aria-live="polite" data-gesture-surface><ResultsScreen players={gamePlayers} difficulty={difficulty} records={resultRecords} reducedEffects={settings.reducedEffects} photoRound={resultPhotoRound} photoPrompt={photoPrompt(resultPhotoRound - 1)} onCapture={captureResultPhoto} onReplay={startRound} onChooseSong={chooseSong} onHome={() => go('openHome')} /></section>}
         {renderPanels('arcade')}
-        {arcadePhase === 'playing' && trackingRecovery.mode !== 'playing' && <div className="tracking-recovery" role="status" aria-live="polite">
+        {arcadePhase === 'playing' && trackingRecovery.mode !== 'playing' && <div className="tracking-recovery" data-recovery-mode={trackingRecovery.mode} role="status" aria-live="polite">
           <span className="kicker">{L('Tracking paused', '追踪已暂停')}</span>
           <h2>{!cameraRunning ? L('Camera off', '摄像头已关闭') : trackingRecovery.mode === 'finding' ? L('Finding you', '正在寻找你') : trackingDigit}</h2>
           <p>{!cameraRunning ? L('Return to camera setup to reconnect.', '返回摄像头设置以重新连接。') : trackingRecovery.mode === 'finding' ? L('Step into the camera. The song will wait.', '站进画面，歌曲会等你。') : L('Get ready to dance again!', '准备好继续跳舞！')}</p>
@@ -818,7 +861,7 @@ export default function App() {
 
   const renderPractice = () => <div className="destination-wrap" data-gesture-surface>{renderHeader('Practice Studio')}{renderPanels('practice')}{src && <footer className="practice-legend"><span className="legend-group"><span className="legend-title">{T('Reference')}</span><span className="legend-item"><i style={{ background: SIDE_COLORS.left }} /> {T("dancer's left")}</span><span className="legend-item"><i style={{ background: SIDE_COLORS.right }} /> {T("dancer's right")}</span></span><span className="legend-group"><span className="legend-title">{T('You')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.ok }} /> {T('matching')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.warn }} /> {T('a bit off')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.bad }} /> {T('way off')}</span></span></footer>}</div>
 
-  const renderLibrary = () => <div className="destination-wrap">{renderHeader('Library')}<main className="destination-screen library-screen" data-gesture-surface><div className="screen-title-row"><h1>{L('Your songs', '你的歌曲')}</h1><button className="btn primary" data-needs-file onClick={() => openFilePicker('arcade')}>{T('Add a dance')}</button></div>{filePickerNotice && <p className="file-picker-notice" role="status">{L('Use the device to choose a video file.', '请用设备选择视频文件。')}</p>}<Library entries={library} stats={stats} records={records} currentId={currentId} selectedId={gestureSelectedId} onPreview={(entry) => setGestureSelectedId(entry.id)} onOpen={(entry) => void openEntry(entry)} onForget={(entry) => void forgetEntry(entry)} emptyHint={T('No songs yet. Add a dance video to build your library.')} /></main></div>
+  const renderLibrary = () => <div className="destination-wrap">{renderHeader('Library')}<main className="destination-screen library-screen" data-gesture-surface><div className="screen-title-row"><h1>{L('Your songs', '你的歌曲')}</h1><button className="btn primary" data-needs-file onClick={() => openFilePicker('arcade')}>{T('Add a dance')}</button></div>{filePickerNotice && <p className="file-picker-notice" role="status">{L('Use the device to choose a video file.', '请用设备选择视频文件。')}</p>}<Library entries={library} stats={stats} records={records} currentId={currentId} selectedId={gestureSelectedId} onPreview={(entry) => setGestureSelectedId(entry.id)} onOpen={(entry) => void openEntry(entry)} onForget={(entry) => void forgetEntry(entry)} emptyHint={T('No songs yet. Add a dance video to build your library.')} /><ResultPhotoGallery /></main></div>
 
   useLangTick()
   return (
@@ -859,12 +902,12 @@ export default function App() {
         </div>
         <button className="btn subtle tracking-back" onClick={() => dispatch({ type: 'openHome' })}>{L('Back to menu', '返回菜单')}</button>
       </main>}
-      {activeScreen === 'home' && <HomeScreen trackingReady={lobby.ready} selected={homeSelected} motion={homeMotion} onMove={moveHome} onSelect={selectHome} account={<AccountBar />} />}
+      {activeScreen === 'home' && <HomeScreen trackingReady={lobby.ready} selected={homeSelected} motion={homeMotion} onMove={moveHome} onSelect={selectHome} onLibrary={() => go('openLibrary')} account={<AccountBar />} />}
       {activeScreen === 'arcade' && renderArcade()}
       {activeScreen === 'practice' && renderPractice()}
       {activeScreen === 'library' && renderLibrary()}
       {navigation.screen !== 'attract' && <Suspense fallback={null}><div className={`camera-dock camera-${navigation.screen === 'tracking' ? 'tracking' : activeScreen === 'arcade' ? arcadePhase : activeScreen}${cameraRunning ? '' : ' camera-off'}`}>
-        <WebcamPanel targetRef={targetRef} videoId={current?.id} videoName={current?.name} onSectionPractice={(deltas) => void recordSectionPractice(deltas)} focus={focus} onFocusChange={setFocus} showSkeletons={settings.showCameraSkeletons} onShowSkeletonsChange={(visible) => updateSettings({ ...settings, showCameraSkeletons: visible })} trackHead={settings.trackHead} gamePhase={activeScreen === 'arcade' ? gamePhase : 'lobby'} gameRun={gameRun} onLobbyChange={updateLobby} onGameScores={updateGameScores} onHit={showHit} onScoreDebug={import.meta.env.DEV ? updateScoreDebug : undefined} onSoloPresence={reportSoloPresence} registrationPlayers={registrationPlayers} onRegistrationPlayersChange={activeScreen === 'practice' ? setRegistrationPlayers : undefined} gestureContext={gestureContext} onGestureAction={handleGestureAction} soundMuted={settings.soundMuted} onRunningChange={setCameraRunning} />
+        <WebcamPanel targetRef={targetRef} videoId={current?.id} videoName={current?.name} onSectionPractice={(deltas) => void recordSectionPractice(deltas)} focus={focus} onFocusChange={setFocus} showSkeletons={settings.showCameraSkeletons} onShowSkeletonsChange={(visible) => updateSettings({ ...settings, showCameraSkeletons: visible })} trackHead={settings.trackHead} showPoseDebug={settings.showPoseDebug} onPhotoFrameReady={onPhotoFrameReady} gamePhase={activeScreen === 'arcade' ? gamePhase : 'lobby'} gameRun={gameRun} onLobbyChange={updateLobby} onGameScores={updateGameScores} onHit={showHit} onScoreDebug={import.meta.env.DEV ? updateScoreDebug : undefined} onSoloPresence={reportSoloPresence} registrationPlayers={registrationPlayers} onRegistrationPlayersChange={activeScreen === 'practice' ? setRegistrationPlayers : undefined} gestureContext={gestureContext} onGestureAction={handleGestureAction} soundMuted={settings.soundMuted} onRunningChange={setCameraRunning} />
       </div></Suspense>}
       {navigation.screen === 'settings' && <SettingsScreen settings={settings} onChange={updateSettings} onClose={() => dispatch({ type: 'closeSettings' })} />}
     </div>
