@@ -114,6 +114,29 @@ test('keeps the best reading inside a hit window', () => {
   assert.equal(player.perfect, 1)
 })
 
+test('easy allows later moves while hard asks for tighter timing than normal', () => {
+  const cue = [targets[0]]
+  const result = (difficulty: 'easy' | 'normal' | 'hard', time: number) => {
+    const visible = judgeDueCues(newPlayerRound(), 0, 1, cue, true, difficulty)
+    const pending = judgeDueCues(visible, 90, time, cue, true, difficulty)
+    return judgeDueCues(pending, null, 1.5, cue, true, difficulty)
+  }
+
+  assert.equal(result('easy', 1.35).perfect, 1)
+  assert.equal(result('normal', 1.35).miss, 1)
+  assert.equal(result('normal', 1.23).perfect, 1)
+  assert.equal(result('hard', 1.23).miss, 1)
+  assert.equal(result('hard', 1.18).perfect, 1)
+
+  const early = (difficulty: 'easy' | 'normal') => {
+    const pending = judgeDueCues(newPlayerRound(), 90, 0.65, cue, true, difficulty)
+    const visible = judgeDueCues(pending, 0, 1, cue, true, difficulty)
+    return judgeDueCues(visible, null, 1.5, cue, true, difficulty)
+  }
+  assert.equal(early('easy').perfect, 1)
+  assert.equal(early('normal').miss, 1)
+})
+
 test('does not reuse one late camera frame for several missed markers', () => {
   let calls = 0
   const crowded = [targets[0], { ...targets[1], time: 1.1, poseTime: 1.1 }]

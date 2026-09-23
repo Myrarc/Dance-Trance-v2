@@ -4,12 +4,17 @@ import {
   MIN_HIT_MOVEMENT_DEG,
   type PoseFeature,
 } from './angles.ts'
-import type { CueEvent } from './hitTargets.ts'
+import type { CueEvent, Difficulty } from './hitTargets.ts'
 
 export type GamePhase = 'lobby' | 'countdown' | 'playing' | 'paused' | 'results'
 export type HitGrade = 'perfect' | 'good' | 'miss'
 
 export const HIT_WINDOW_S = 0.25
+const HIT_WINDOW_BY_DIFFICULTY: Record<Difficulty, number> = {
+  easy: 0.4,
+  normal: HIT_WINDOW_S,
+  hard: 0.2,
+}
 
 // These mirror the green/yellow limb tolerances: about 20° and 42° off target.
 const PERFECT_MATCH = 78
@@ -69,12 +74,14 @@ export function judgeDueCues(
   time: number,
   cues: CueEvent[],
   posePresent?: boolean,
+  difficulty: Difficulty = 'normal',
 ): PlayerRound {
   let next = player
+  const hitWindow = HIT_WINDOW_BY_DIFFICULTY[difficulty]
   for (let index = next.nextTarget; index < cues.length; index++) {
     const cue = cues[index]
-    if (time < cue.time - HIT_WINDOW_S) break
-    if (time > cue.time + HIT_WINDOW_S) continue
+    if (time < cue.time - hitWindow) break
+    if (time > cue.time + hitWindow) continue
     const previous = next.pending[index]
     const reading = posePresent !== false ? typeof match === 'function' ? match(cue) : match : null
     const bestMatch = reading !== null && (previous?.bestMatch == null || reading > previous.bestMatch)
@@ -84,7 +91,7 @@ export function judgeDueCues(
       next = { ...next, pending: { ...next.pending, [index]: { bestMatch, observedWindow } } }
     }
   }
-  while (next.nextTarget < cues.length && time >= cues[next.nextTarget].time + HIT_WINDOW_S) {
+  while (next.nextTarget < cues.length && time >= cues[next.nextTarget].time + hitWindow) {
     const pending = { ...next.pending }
     const reading = pending[next.nextTarget]
     delete pending[next.nextTarget]

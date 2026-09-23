@@ -37,7 +37,7 @@ import {
   type HitGrade,
   type PlayerRound,
 } from '../pose/gameplay'
-import type { CueEvent } from '../pose/hitTargets'
+import type { CueEvent, Difficulty } from '../pose/hitTargets'
 
 /** Whether to mirror the comparison; 'auto' follows the reference's facing. */
 type MirrorMode = 'auto' | 'mirror' | 'direct'
@@ -135,6 +135,7 @@ interface Props {
   onPhotoFrameReady?: (capture: (() => HTMLCanvasElement | null) | null) => void
   gamePhase?: GamePhase
   gameRun?: number
+  difficulty?: Difficulty
   onLobbyChange?: (ready: boolean, players: number) => void
   onGameScores?: (players: PlayerRound[]) => void
   onHit?: (grade: Exclude<HitGrade, 'miss'>, target: CueEvent) => void
@@ -173,6 +174,7 @@ export default function WebcamPanel({
   onPhotoFrameReady,
   gamePhase = 'lobby',
   gameRun = 0,
+  difficulty = 'normal',
   onLobbyChange,
   onGameScores,
   onHit,
@@ -192,6 +194,8 @@ export default function WebcamPanel({
   focusRef.current = focus
   const trackHeadRef = useRef(trackHead)
   trackHeadRef.current = trackHead
+  const difficultyRef = useRef(difficulty)
+  difficultyRef.current = difficulty
   // Per-phrase totals for this session, plus the clock used to charge time to
   // whichever phrase was on screen.
   const sectionAccumRef = useRef<Record<string, SectionPractice>>({})
@@ -764,6 +768,7 @@ export default function WebcamPanel({
             target.time,
             target.cueChart,
             registrationPlayersRef.current === 1 ? frame !== null : undefined,
+            difficultyRef.current,
           )
           roundsRef.current[index] = after
           if (after !== before) {
