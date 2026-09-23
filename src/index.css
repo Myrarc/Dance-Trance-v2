@@ -2760,7 +2760,7 @@ input[type='range'] { accent-color: var(--accent); }
 .pause-gesture-progress i { display: block; height: 5px; margin-top: 3px; background: var(--cyan); transform-origin: left; }
 .camera-paused { z-index: 130; right: 16px; bottom: 16px; width: min(250px, 25vw); }
 
-.home-screen { grid-template-rows: repeat(4, auto); align-content: start; gap: 14px; }
+.home-screen { grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 14px; }
 .home-hero { display: block; margin: 0; }
 .home-copy h1 { margin: 4px 0 8px; font-size: clamp(38px, 5vw, 66px); }
 .home-copy p { margin: 0; }
@@ -2863,7 +2863,7 @@ input[type='range'] { accent-color: var(--accent); }
 .picker-heading p { margin: 8px 0 0; font-size: clamp(18px, 1.5vw, 26px); font-weight: 800; }
 .picker-stage { position: relative; width: 100%; min-width: 0; }
 .song-carousel { --carousel-step: clamp(280px, 31vw, 440px); position: relative; width: 100%; height: clamp(410px, 31vw, 450px); overflow: hidden; }
-.track-picker .song-carousel { --carousel-step: clamp(370px, 31vw, 1150px); height: clamp(410px, 43dvh, 950px); }
+.track-picker .song-carousel { --carousel-step: clamp(370px, 31vw, 1150px); height: clamp(460px, 48dvh, 950px); }
 .track-picker .song-card { width: clamp(340px, 27vw, 1020px); min-height: clamp(350px, 38dvh, 850px); }
 .song-card {
   --shift: 0px;
@@ -2962,8 +2962,8 @@ input[type='range'] { accent-color: var(--accent); }
 .song-card-media video, .song-card-media img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .song-card strong { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; font-size: clamp(22px, 2vw, 46px); font-weight: 950; line-height: 1.05; overflow-wrap: anywhere; }
 .song-card > span:last-child { font-size: 16px; font-weight: 800; }
-.home-carousel { --carousel-step: clamp(260px, 31vw, 430px); --side-scale: 1; height: 365px; align-self: center; }
-.home-card { grid-template-rows: auto 1fr auto; width: clamp(250px, 28vw, 390px); height: 310px; min-height: 0; padding: 20px; gap: 10px; }
+.home-carousel { --carousel-step: clamp(260px, 31vw, 430px); --side-scale: 1; height: clamp(365px, 42dvh, 700px); align-self: center; }
+.home-card { grid-template-rows: auto 1fr auto; width: clamp(250px, 28vw, 390px); height: clamp(310px, 36dvh, 630px); min-height: 0; padding: 20px; gap: 10px; }
 .home-card-cyan { background: var(--cyan); }
 .home-card-yellow { background: var(--warn); }
 .home-card-cream { background: var(--panel); }
@@ -3020,12 +3020,14 @@ input[type='range'] { accent-color: var(--accent); }
 .focus-card-lower { background: var(--accent); }
 .difficulty-navigation-hint { margin: 0; text-align: center; font-size: clamp(15px, 1.3vw, 20px); font-weight: 900; }
 .picker-stage .preview-play { position: absolute; z-index: 3; right: 50%; bottom: 10px; transform: translateX(50%); }
-.picker-import { display: flex; align-items: center; justify-content: center; gap: 18px; }
-.picker-import .btn { min-height: 62px; font-size: 22px; }
+.picker-import { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.picker-import .btn { min-height: 48px; padding: 8px 14px; font-size: 18px; }
 .picker-import span { max-width: 36ch; font-size: 16px; font-weight: 800; line-height: 1.2; }
 @media (min-width: 901px) and (max-height: 760px) {
+  .home-carousel { height: 365px; }
+  .home-card { height: 310px; }
   .track-picker { gap: 12px; padding-block: 14px; }
-  .track-picker .song-carousel { height: 350px; }
+  .track-picker .song-carousel { height: 390px; }
   .track-picker .song-card { min-height: 300px; }
   .difficulty-screen { gap: 10px; min-height: calc(100dvh - 90px); padding-block: 10px; }
   .difficulty-heading h1 { font-size: clamp(42px, 4.4vw, 58px); }
@@ -3112,15 +3114,16 @@ input[type='range'] { accent-color: var(--accent); }
   flex: 1;
   display: grid;
   place-items: center;
-  min-height: 0;
-  padding: clamp(24px, 5vw, 64px) clamp(270px, 23vw, 340px) clamp(24px, 5vw, 64px) clamp(24px, 5vw, 64px);
+  min-height: calc(100dvh - 110px);
+  padding: clamp(24px, 4vw, 56px) clamp(180px, 18vw, 280px) clamp(24px, 4vw, 56px) clamp(24px, 4vw, 56px);
 }
 .song-loading-card {
   display: grid;
   grid-template-columns: minmax(260px, .9fr) minmax(0, 1.1fr);
   gap: clamp(24px, 4vw, 64px);
   align-items: center;
-  width: min(1040px, 100%);
+  width: min(1400px, 100%);
+  min-height: clamp(400px, 56dvh, 720px);
   padding: clamp(18px, 3vw, 40px);
   border: 5px solid var(--ink);
   border-radius: 16px;
@@ -3131,15 +3134,15 @@ input[type='range'] { accent-color: var(--accent); }
 .song-loading-art img { width: 100%; height: 100%; object-fit: cover; }
 .song-loading-art span { font-size: 58px; font-weight: 900; }
 .song-loading-copy { min-width: 0; }
-.song-loading-copy h1 { margin: 10px 0 22px; overflow-wrap: anywhere; font-size: clamp(25px, 3.8vw, 58px); font-weight: 950; line-height: 1.04; }
+.song-loading-copy h1 { margin: 10px 0 22px; overflow-wrap: anywhere; font-size: clamp(25px, 3.8vw, 72px); font-weight: 950; line-height: 1.04; }
 .song-loading-copy p { min-height: 2.5em; font-size: clamp(20px, 2vw, 30px); font-weight: 850; line-height: 1.2; }
 .song-loading-progress { overflow: hidden; height: 18px; margin: 22px 0; border: 3px solid var(--ink); border-radius: 7px; background: var(--panel); }
 .song-loading-progress i { display: block; height: 100%; background: var(--cyan); transition: width 250ms ease; }
 .song-loading-copy .btn { min-height: 52px; font-size: 16px; }
 .game-screen-active > .game-playing { right: 16px; left: auto; width: min(620px, calc(100vw - 310px)); }
 @media (max-width: 900px) {
-  .song-loading-screen { padding: 210px 16px 24px; }
-  .song-loading-card { grid-template-columns: 1fr; width: min(580px, 100%); }
+  .song-loading-screen { min-height: calc(100dvh - 90px); padding: clamp(110px, 20dvh, 210px) 16px 24px; }
+  .song-loading-card { grid-template-columns: 1fr; width: min(580px, 100%); min-height: 0; }
   .song-loading-art { max-height: 34vh; }
   .difficulty-screen { align-content: start; padding: clamp(110px, 18dvh, 170px) 16px 24px; overflow: auto; }
   .difficulty-song-bar { width: min(620px, 100%); }
