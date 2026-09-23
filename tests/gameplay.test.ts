@@ -20,6 +20,26 @@ test('scores each due marker once and resets combo on a miss', () => {
   assert.equal(accuracy(player), 50)
 })
 
+test('a cue with no visible player frame is neutral and preserves the combo', () => {
+  let player = { ...newPlayerRound(), combo: 2 }
+  player = judgeDueCues(player, null, 1, targets, false)
+  player = judgeDueCues(player, null, 1 + HIT_WINDOW_S, targets, false)
+  assert.equal(player.nextTarget, 1)
+  assert.equal(player.judged, 0)
+  assert.equal(player.miss, 0)
+  assert.equal(player.combo, 2)
+  player = judgeDueCues(player, 90, 2, targets, true)
+  player = judgeDueCues(player, null, 2 + HIT_WINDOW_S, targets, false)
+  assert.equal(player.perfect, 1)
+  assert.equal(player.combo, 3)
+})
+
+test('a visible but unscorable pose is still a miss, not a camera dropout', () => {
+  let player = judgeDueCues(newPlayerRound(), null, 1, targets, true)
+  player = judgeDueCues(player, null, 1 + HIT_WINDOW_S, targets, false)
+  assert.equal(player.miss, 1)
+})
+
 test('grades match the green and yellow limb feedback players see', () => {
   assert.equal(gradeMatch(78), 'perfect')
   assert.equal(gradeMatch(53), 'good')

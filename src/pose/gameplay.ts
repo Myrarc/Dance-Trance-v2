@@ -26,6 +26,7 @@ export interface PlayerRound {
   nextTarget: number
   lastGrade: HitGrade | null
   bestMatch: number | null
+  observedWindow: boolean
 }
 
 export interface CueLandmark {
@@ -55,6 +56,7 @@ export const newPlayerRound = (): PlayerRound => ({
   nextTarget: 0,
   lastGrade: null,
   bestMatch: null,
+  observedWindow: false,
 })
 
 export function gradeMatch(match: number | null): HitGrade {
@@ -68,6 +70,7 @@ export function judgeDueCues(
   match: number | null | ((cue: CueEvent) => number | null),
   time: number,
   cues: CueEvent[],
+  posePresent?: boolean,
 ): PlayerRound {
   let next = player
   let sampled = false
@@ -76,13 +79,19 @@ export function judgeDueCues(
     if (time < cue.time - HIT_WINDOW_S) break
 
     if (!sampled && time <= cue.time + HIT_WINDOW_S) {
-      const reading = typeof match === 'function' ? match(cue) : match
+      const reading = posePresent !== false ? typeof match === 'function' ? match(cue) : match : null
       sampled = true
+      if (posePresent !== false && !next.observedWindow) next = { ...next, observedWindow: true }
       if (reading !== null && (next.bestMatch === null || reading > next.bestMatch)) {
         next = { ...next, bestMatch: reading }
       }
     }
     if (time < cue.time + HIT_WINDOW_S) break
+
+    if (posePresent !== undefined && !next.observedWindow) {
+      next = { ...next, nextTarget: next.nextTarget + 1, bestMatch: null }
+      continue
+    }
 
     const grade = gradeMatch(next.bestMatch)
     const combo = grade === 'miss' ? 0 : next.combo + 1
@@ -99,6 +108,7 @@ export function judgeDueCues(
       nextTarget: next.nextTarget + 1,
       lastGrade: grade,
       bestMatch: null,
+      observedWindow: false,
     }
   }
   return next
