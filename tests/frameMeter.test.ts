@@ -8,11 +8,14 @@ test('counts camera frames skipped while pose inference was busy', () => {
   meter.record(1, 0)
   meter.record(2, 250)
   meter.record(5, 500)
+  meter.recordInference(34)
+  meter.recordInference(47)
 
   assert.deepEqual(meter.snapshot(1000), {
     cameraFps: 4,
     trackingFps: 2,
     droppedFrames: 2,
+    inferenceP95Ms: 47,
   })
 })
 

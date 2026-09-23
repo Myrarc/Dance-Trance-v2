@@ -25,8 +25,7 @@ export interface PlayerRound {
   judged: number
   nextTarget: number
   lastGrade: HitGrade | null
-  bestMatch: number | null
-  observedWindow: boolean
+  pending: Record<number, { bestMatch: number | null; observedWindow: boolean }>
 }
 
 export interface CueLandmark {
@@ -55,8 +54,7 @@ export const newPlayerRound = (): PlayerRound => ({
   judged: 0,
   nextTarget: 0,
   lastGrade: null,
-  bestMatch: null,
-  observedWindow: false,
+  pending: {},
 })
 
 export function gradeMatch(match: number | null): HitGrade {
@@ -73,27 +71,29 @@ export function judgeDueCues(
   posePresent?: boolean,
 ): PlayerRound {
   let next = player
-  let sampled = false
-  while (next.nextTarget < cues.length) {
-    const cue = cues[next.nextTarget]
+  for (let index = next.nextTarget; index < cues.length; index++) {
+    const cue = cues[index]
     if (time < cue.time - HIT_WINDOW_S) break
-
-    if (!sampled && time <= cue.time + HIT_WINDOW_S) {
-      const reading = posePresent !== false ? typeof match === 'function' ? match(cue) : match : null
-      sampled = true
-      if (posePresent !== false && !next.observedWindow) next = { ...next, observedWindow: true }
-      if (reading !== null && (next.bestMatch === null || reading > next.bestMatch)) {
-        next = { ...next, bestMatch: reading }
-      }
+    if (time > cue.time + HIT_WINDOW_S) continue
+    const previous = next.pending[index]
+    const reading = posePresent !== false ? typeof match === 'function' ? match(cue) : match : null
+    const bestMatch = reading !== null && (previous?.bestMatch == null || reading > previous.bestMatch)
+      ? reading : previous?.bestMatch ?? null
+    const observedWindow = posePresent !== false || previous?.observedWindow === true
+    if (bestMatch !== previous?.bestMatch || observedWindow !== previous?.observedWindow) {
+      next = { ...next, pending: { ...next.pending, [index]: { bestMatch, observedWindow } } }
     }
-    if (time < cue.time + HIT_WINDOW_S) break
-
-    if (posePresent !== undefined && !next.observedWindow) {
-      next = { ...next, nextTarget: next.nextTarget + 1, bestMatch: null }
+  }
+  while (next.nextTarget < cues.length && time >= cues[next.nextTarget].time + HIT_WINDOW_S) {
+    const pending = { ...next.pending }
+    const reading = pending[next.nextTarget]
+    delete pending[next.nextTarget]
+    if (posePresent !== undefined && !reading?.observedWindow) {
+      next = { ...next, nextTarget: next.nextTarget + 1, pending }
       continue
     }
 
-    const grade = gradeMatch(next.bestMatch)
+    const grade = gradeMatch(reading?.bestMatch ?? null)
     const combo = grade === 'miss' ? 0 : next.combo + 1
     const base = grade === 'perfect' ? 1000 : grade === 'good' ? 600 : 0
     next = {
@@ -107,8 +107,7 @@ export function judgeDueCues(
       judged: next.judged + 1,
       nextTarget: next.nextTarget + 1,
       lastGrade: grade,
-      bestMatch: null,
-      observedWindow: false,
+      pending,
     }
   }
   return next

@@ -1,5 +1,5 @@
 import { T, L } from '../i18n'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { HandLandmarker, NormalizedLandmark, PoseLandmarker } from '@mediapipe/tasks-vision'
 import { createHandLandmarker, createPoseLandmarker } from '../pose/landmarker'
 import {
@@ -61,6 +61,7 @@ const LAG_WINDOW_S = 1
 
 interface Props {
   src: string
+  playbackRef?: React.MutableRefObject<HTMLVideoElement | null>
   targetRef: React.MutableRefObject<TargetPose>
   sections: Section[]
   sectionStats?: Record<string, SectionStat>
@@ -148,6 +149,7 @@ function fmt(t: number) {
 
 export default function VideoPanel({
   src,
+  playbackRef,
   targetRef,
   sections,
   sectionStats,
@@ -169,8 +171,8 @@ export default function VideoPanel({
   const trackRef = useRef<PoseTrack | null>(null)
   trackRef.current = track ?? null
   const cueChart = useMemo(
-    () => (track ? buildCueChart(track, difficulty, trackHead) : []),
-    [difficulty, track, trackHead],
+    () => (track ? buildCueChart(track, difficulty, trackHead, focus) : []),
+    [difficulty, focus, track, trackHead],
   )
   const cueChartRef = useRef(cueChart)
   cueChartRef.current = cueChart
@@ -182,6 +184,10 @@ export default function VideoPanel({
   const sectionsRef = useRef<Section[]>([])
   sectionsRef.current = sections
   const videoRef = useRef<HTMLVideoElement>(null)
+  const setVideoRef = useCallback((video: HTMLVideoElement | null) => {
+    videoRef.current = video
+    if (playbackRef) playbackRef.current = video
+  }, [playbackRef])
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hitCanvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -245,7 +251,7 @@ export default function VideoPanel({
     // A completed analysis or preference change can arrive while playback is paused at the same
     // timestamp; force the new track and its hit markers to paint once.
     lastTimeRef.current = -1
-  }, [difficulty, track, trackHead])
+  }, [difficulty, focus, track, trackHead])
 
   useEffect(() => {
     const video = videoRef.current
@@ -862,7 +868,7 @@ export default function VideoPanel({
       <div className={`stage ${mirror ? 'mirrored' : ''}`} ref={stageRef}>
         <div className="stage-inner" ref={stageInnerRef}>
         <video
-          ref={videoRef}
+          ref={setVideoRef}
           src={src}
           playsInline
           style={{ opacity: ghost ? 0.16 : 1 }}

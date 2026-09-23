@@ -8,6 +8,7 @@ import { computeAngles, compareToHistory, levelConnectionColors, dimmedSegments,
 import { LandmarkSmoother } from '../pose/filter'
 import { framingProblems } from '../pose/checkup'
 import { FrameMeter, frameTimestampMs, type FrameMetrics } from '../pose/frameMeter'
+import { advanceRegistration, initialRegistration, selectRegistrationCount } from '../pose/registration'
 import { advanceCalibration, beginCalibration, type CalibrationIssue, type CalibrationState } from '../pose/calibration'
 import { createPlayerLock, matchPlayerLock, primarySoloCandidate, registrationCandidates, type ColorSignature, type LockReason, type PlayerLock } from '../pose/playerLock'
 import { CameraRequestTimeoutError, requestCameraStream } from '../lib/cameraStream'
@@ -40,8 +41,7 @@ import type { CueEvent } from '../pose/hitTargets'
 
 /** Whether to mirror the comparison; 'auto' follows the reference's facing. */
 type MirrorMode = 'auto' | 'mirror' | 'direct'
-const READY_HOLD_MS = 1200
-const LIVE_INFERENCE_INTERVAL_MS = 50
+const LIVE_INFERENCE_INTERVAL_MS = 33
 const LIVE_INPUT_WIDTH = 960
 const APPEARANCE_SAMPLE_SIZE = 8
 const EMPTY_GESTURE_HOLD: GestureHold = { candidate: null, since: 0, latched: false, beeps: 0, lastBeepAt: 0 }
@@ -94,6 +94,7 @@ const CALIBRATION_ADVICE: Record<CalibrationIssue, string> = {
 interface PlayerSetup {
   count: number
   detected: boolean[]
+  confirmed: boolean[]
   progress: number[]
   inZone: boolean[]
   rightHandRaised: boolean[]
@@ -142,6 +143,7 @@ interface Props {
   requireCalibration?: boolean
   registrationPlayers?: 1 | 2
   onRegistrationPlayersChange?: (count: 1 | 2) => void
+  registrationScreen?: boolean
   onCalibrationChange?: (state: CalibrationState | null) => void
   gestureContext?: GestureContext | null
   onGestureAction?: (gesture: MenuGesture) => void
@@ -179,6 +181,7 @@ export default function WebcamPanel({
   requireCalibration = false,
   registrationPlayers = 1,
   onRegistrationPlayersChange,
+  registrationScreen = false,
   onCalibrationChange,
   gestureContext = null,
   onGestureAction,
@@ -225,8 +228,7 @@ export default function WebcamPanel({
   const movementHistoryRef = useRef<{ t: number; value: CueFrame }[][]>([[], []])
   const playerSmoothersRef = useRef([new LandmarkSmoother(), new LandmarkSmoother()])
   const playerWorldSmoothersRef = useRef([new LandmarkSmoother(), new LandmarkSmoother()])
-  const readyHoldRef = useRef([0, 0])
-  const stableCountRef = useRef({ count: 0, since: 0 })
+  const registrationStateRef = useRef(initialRegistration(0))
   const lobbyReadyRef = useRef(false)
   const playerLockRef = useRef<PlayerLock | null>(null)
   const lastRejectionRef = useRef<{ reason: LockReason; at: number } | null>(null)
@@ -274,6 +276,7 @@ export default function WebcamPanel({
   const [playerSetup, setPlayerSetup] = useState<PlayerSetup>({
     count: registrationPlayers,
     detected: [],
+    confirmed: [],
     progress: [],
     inZone: [],
     rightHandRaised: [],
@@ -307,9 +310,9 @@ export default function WebcamPanel({
     playerLockRef.current = null
     lastRejectionRef.current = null
     poseDiagnosticRef.current = null
-    registeredPlayerCountRef.current = registrationPlayersRef.current
-    readyHoldRef.current = [0, 0]
-    stableCountRef.current = { count: 0, since: performance.now() }
+    registeredPlayerCountRef.current = 1
+    registrationStateRef.current = initialRegistration(performance.now())
+    registrationPlayersRef.current = 1
     lobbyReadyRef.current = false
     livePlayerCountRef.current = 0
     playerSmoothersRef.current.forEach((smoother) => smoother.reset())
@@ -326,17 +329,16 @@ export default function WebcamPanel({
     setCalibration(null)
     setLobbyReady(false)
     setTrackingLost(false)
-    setPlayerSetup({ count: registrationPlayersRef.current, detected: [], progress: [], inZone: [], rightHandRaised: [] })
+    setPlayerSetup({ count: 1, detected: [], confirmed: [], progress: [], inZone: [], rightHandRaised: [] })
+    onRegistrationPlayersChange?.(1)
     onCalibrationChange?.(null)
     onLobbyChange?.(false, 0)
-  }, [onCalibrationChange, onLobbyChange])
+  }, [onCalibrationChange, onLobbyChange, onRegistrationPlayersChange])
 
-  // Solo registration survives returning from a round to the menus. Two-player
-  // keeps its existing lobby reset until its lock flow is redesigned.
-  const registrationPhase = registrationPlayers === 2 ? gamePhase : 'lobby'
+  // A confirmed lock survives menus and rounds. Opening camera setup starts a fresh check.
   useEffect(() => {
-    if (running && registrationPhase === 'lobby') resetPlayers()
-  }, [registrationPlayers, running, registrationPhase, resetPlayers])
+    if (running && (registrationScreen || !lobbyReadyRef.current)) resetPlayers()
+  }, [running, registrationScreen, resetPlayers])
 
   useEffect(() => {
     if (!gestureHoldRef.current.latched) {
@@ -405,8 +407,7 @@ export default function WebcamPanel({
       v.srcObject = stream
       await v.play()
       sessionRef.current = { startedAt: performance.now(), sum: 0, count: 0, best: 0 }
-      readyHoldRef.current = [0, 0]
-      stableCountRef.current = { count: 0, since: performance.now() }
+      registrationStateRef.current = initialRegistration(performance.now())
       playerLockRef.current = null
       lastRejectionRef.current = null
       poseDiagnosticRef.current = null
@@ -459,12 +460,12 @@ export default function WebcamPanel({
     movementHistoryRef.current = [[], []]
     playerSmoothersRef.current.forEach((smoother) => smoother.reset())
     playerWorldSmoothersRef.current.forEach((smoother) => smoother.reset())
-    readyHoldRef.current = [0, 0]
+    registrationStateRef.current = initialRegistration(performance.now())
     lobbyReadyRef.current = false
     gestureHoldRef.current = { ...EMPTY_GESTURE_HOLD }
     setRunning(false)
     setLobbyReady(false)
-    setPlayerSetup({ count: registrationPlayersRef.current, detected: [], progress: [], inZone: [], rightHandRaised: [] })
+    setPlayerSetup({ count: 1, detected: [], confirmed: [], progress: [], inZone: [], rightHandRaised: [] })
     playerLockRef.current = null
     lastRejectionRef.current = null
     poseDiagnosticRef.current = null
@@ -513,7 +514,9 @@ export default function WebcamPanel({
         input.height = inputHeight
       }
       input.getContext('2d')!.drawImage(v, 0, 0, input.width, input.height)
+      const inferenceStarted = performance.now()
       const res = lmk.detectForVideo(input, timestampMs)
+      meter.recordInference(performance.now() - inferenceStarted)
       if (cv.width !== v.videoWidth || cv.height !== v.videoHeight) {
         cv.width = v.videoWidth
         cv.height = v.videoHeight
@@ -528,7 +531,22 @@ export default function WebcamPanel({
           input, appearanceCanvasRef.current ??= document.createElement('canvas'), player.pose,
         ) }))
       const lock = playerLockRef.current
-      const registrationIndices = lock ? [] : registrationCandidates(detected.map((player) => player.pose), registrationPlayersRef.current)
+      let registrationIndices: (number | null)[] = []
+      if (!lock) {
+        const poses = detected.map((player) => player.pose)
+        const solo = registrationCandidates(poses, 1)
+        const pair = registrationCandidates(poses, 2)
+        const observed = pair.every((index) => index !== null) ? 2 : solo[0] !== null ? 1 : 0
+        const next = selectRegistrationCount(registrationStateRef.current, observed, frameNow)
+        if (next.count !== registrationStateRef.current.count) {
+          registrationPlayersRef.current = next.count
+          playerSmoothersRef.current.forEach((smoother) => smoother.reset())
+          playerWorldSmoothersRef.current.forEach((smoother) => smoother.reset())
+          onRegistrationPlayersChange?.(next.count)
+        }
+        registrationStateRef.current = next
+        registrationIndices = next.count === 2 ? pair : solo
+      }
       const soloReady = registrationPlayersRef.current === 1 && lobbyReadyRef.current
       const soloIndex = soloReady ? primarySoloCandidate(detected.map((player) => player.pose)) : null
       const match = lock && !soloReady ? matchPlayerLock(lock, detected.map((player) => player.pose), frameNow, detected.map((player) => player.appearance)) : null
@@ -568,41 +586,32 @@ export default function WebcamPanel({
             ? playerWorldSmoothersRef.current[slot].filter(player.world, timestampMs / 1000)
             : undefined,
         } : null)
-      if (!lobbyReadyRef.current && stableCountRef.current.count !== count) {
-        stableCountRef.current = { count, since: frameNow }
-        readyHoldRef.current = [0, 0]
-      }
-
-      const setup: PlayerSetup = { count: registrationPlayersRef.current, detected: [], progress: [], inZone: [], rightHandRaised: [] }
+      const setup: PlayerSetup = { count: registrationPlayersRef.current, detected: [], confirmed: [], progress: [], inZone: [], rightHandRaised: [] }
       const poses = players.map((player, index) => {
         const pose = player?.pose
         const inZone = !!player && inPlayerZone(player.x, index, registrationPlayersRef.current)
         const rightHandRaised = !!pose && isRightHandRaised(pose)
-        if (!lobbyReadyRef.current && inZone && rightHandRaised) readyHoldRef.current[index] ||= frameNow
-        else if (!lobbyReadyRef.current) readyHoldRef.current[index] = 0
         setup.detected.push(!!pose)
         setup.inZone.push(inZone)
         setup.rightHandRaised.push(rightHandRaised)
-        setup.progress.push(
-          readyHoldRef.current[index]
-            ? Math.min(1, (frameNow - readyHoldRef.current[index]) / READY_HOLD_MS)
-            : 0,
-        )
         return pose ?? null
       })
 
-      if (
-        !lobbyReadyRef.current &&
-        count === registrationPlayersRef.current &&
-        frameNow - stableCountRef.current.since > 500 &&
-        setup.progress.every((progress) => progress >= 1)
-      ) {
-        playerLockRef.current = createPlayerLock(matched.map((player) => player!.pose), frameNow,
-          matched.map((player) => player!.appearance))
-        gestureHoldRef.current = { ...EMPTY_GESTURE_HOLD, candidate: 'confirm', since: frameNow, latched: true }
-        registeredPlayerCountRef.current = registrationPlayersRef.current
-        lobbyReadyRef.current = true
-        setLobbyReady(true)
+      if (!lobbyReadyRef.current) {
+        const result = advanceRegistration(registrationStateRef.current, setup.detected.map((present, index) => ({
+          present, inZone: setup.inZone[index], raised: setup.rightHandRaised[index],
+        })), frameNow)
+        registrationStateRef.current = result.state
+        setup.confirmed = result.state.slots.slice(0, result.state.count).map((slot) => slot.confirmed)
+        setup.progress = result.progress
+        if (result.ready && count === registrationPlayersRef.current) {
+          playerLockRef.current = createPlayerLock(matched.map((player) => player!.pose), frameNow,
+            matched.map((player) => player!.appearance))
+          gestureHoldRef.current = { ...EMPTY_GESTURE_HOLD, candidate: 'confirm', since: frameNow, latched: true }
+          registeredPlayerCountRef.current = registrationPlayersRef.current
+          lobbyReadyRef.current = true
+          setLobbyReady(true)
+        }
       }
 
       if (lobbyReadyRef.current && requireCalibrationRef.current && calibrationRef.current?.focus !== focusRef.current) {
@@ -852,7 +861,7 @@ export default function WebcamPanel({
       if (v && 'cancelVideoFrameCallback' in v) v.cancelVideoFrameCallback(handle)
       else cancelAnimationFrame(handle)
     }
-  }, [running, targetRef, gamePhase, gameRun, onGameScores, onHit, onLobbyChange, onScoreDebug, onCalibrationChange])
+  }, [running, targetRef, gamePhase, gameRun, onGameScores, onHit, onLobbyChange, onScoreDebug, onCalibrationChange, onRegistrationPlayersChange])
 
   const calibrationGuide = running && gamePhase === 'lobby' && lobbyReady && calibration && !checking && (
     <div className="calibration-card" role="status" aria-live="polite">
@@ -911,15 +920,18 @@ export default function WebcamPanel({
             {(playerSetup.count === 1 ? [0] : [0, 1]).map((index) => {
               const detected = playerSetup.detected[index] ?? false
               const progress = playerSetup.progress[index] ?? 0
+              const confirmed = playerSetup.confirmed[index] ?? false
               const instruction = !detected
                 ? T('Step into this area')
                 : !playerSetup.inZone[index]
                   ? T('Move inside the area')
+                  : confirmed
+                    ? L('Confirmed', '已确认')
                   : !playerSetup.rightHandRaised[index]
                     ? T('Right hand up · left hand down')
                     : `${Math.round(progress * 100)}%`
               return (
-                <div key={index} className={`player-zone ${progress >= 1 ? 'ready' : ''}`}>
+                <div key={index} className={`player-zone ${confirmed && playerSetup.inZone[index] ? 'ready' : ''}`}>
                   <strong>{playerSetup.count === 1 ? T('PLAYER') : `${T('PLAYER')} ${index + 1}`}</strong>
                   <span>{instruction}</span>
                   <i style={{ transform: `scaleX(${progress})` }} />
@@ -979,11 +991,6 @@ export default function WebcamPanel({
 
       <div className="controls">
         <div className="ctrl-group">
-          {gamePhase === 'lobby' && !requireCalibration && onRegistrationPlayersChange && ([1, 2] as const).map((count) => (
-            <button key={count} className={`btn ${registrationPlayers === count ? 'active' : ''}`} aria-pressed={registrationPlayers === count} onClick={() => onRegistrationPlayersChange(count)}>
-              {L(`${count} player${count === 1 ? '' : 's'}`, `${count} 位玩家`)}
-            </button>
-          ))}
           {running && (
             <button className="btn" onClick={stop}>
               {T('Stop camera')}
@@ -1050,6 +1057,7 @@ export default function WebcamPanel({
         <span>Raw {poseDiagnostic.raw} · eligible {poseDiagnostic.eligible}</span>
         <span>Torso visibility % · shoulders {poseDiagnostic.torso[0] ?? '—'}/{poseDiagnostic.torso[1] ?? '—'} · hips {poseDiagnostic.torso[2] ?? '—'}/{poseDiagnostic.torso[3] ?? '—'}</span>
         <span>Selection: {poseDiagnostic.reason} · gap {poseDiagnostic.gapMs}ms</span>
+        {metrics && <span>Camera {metrics.cameraFps} fps · tracking {metrics.trackingFps} fps · inference p95 {metrics.inferenceP95Ms}ms</span>}
         {poseDiagnostic.recentRejection && <span>Recent rejection: {poseDiagnostic.recentRejection}</span>}
       </div>,
       document.body,

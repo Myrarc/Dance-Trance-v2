@@ -10,7 +10,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['logo.png', 'fonts/trance-display-heavy.woff2'],
+      includeAssets: ['logo.png', 'home-background.webp', 'fonts/trance-display-heavy.woff2'],
       manifest: {
         name: 'Dance Trance',
         short_name: 'Dance Trance',

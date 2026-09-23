@@ -1,4 +1,4 @@
-import { computeAngles, hitMovementDegrees, MIN_HIT_MOVEMENT_DEG, type PoseFeature } from './angles.ts'
+import { computeAngles, hitMovementDegrees, MIN_HIT_MOVEMENT_DEG, type Focus, type PoseFeature } from './angles.ts'
 import type { PoseTrack } from './track'
 
 export type Difficulty = 'easy' | 'normal' | 'hard'
@@ -380,6 +380,7 @@ export function buildCueChart(
   track: PoseTrack,
   difficulty: Difficulty = 'normal',
   trackHead = true,
+  focus: Focus = 'full',
 ): CueEvent[] {
   const spots = buildSpots(track)
   const holds = buildHolds(track, spots)
@@ -396,6 +397,9 @@ export function buildCueChart(
     .map((cue) => snapToBeat(track, cue))
     .filter((cue) => cue !== null)
     .filter((cue) => trackHead || !('joint' in cue) || cue.joint !== 'head')
+    .filter((cue) => focus === 'full' || (focus === 'upper'
+      ? cue.kind === 'clap' || cue.joint === 'head' || cue.joint === 'leftHand' || cue.joint === 'rightHand'
+      : cue.kind !== 'clap' && (cue.joint === 'leftFoot' || cue.joint === 'rightFoot')))
   return removeOverlappingLimbCues(filterDifficulty(track, snapped, difficulty))
 }
 

@@ -43,6 +43,23 @@ function setPoint(
   data[offset + 5] = 0
 }
 
+test('score focus excludes unused limb markers from the chart that scoring receives', () => {
+  const track = makeTrack((data, frame) => {
+    const step = frame <= 6 ? frame : 12 - Math.min(frame, 12)
+    setPoint(data, frame, 15, 0.3 + step * 0.035, 0.45)
+    setPoint(data, frame, 27, 0.43 + step * 0.035, 0.9)
+  })
+  const full = buildCueChart(track, 'hard')
+  assert.ok(full.some((cue) => cue.kind !== 'clap' && cue.joint === 'leftHand'))
+  assert.ok(full.some((cue) => cue.kind !== 'clap' && cue.joint === 'leftFoot'))
+  const arms = buildCueChart(track, 'hard', false, 'upper')
+  const legs = buildCueChart(track, 'hard', false, 'lower')
+  assert.ok(arms.length > 0)
+  assert.ok(legs.length > 0)
+  assert.ok(arms.every((cue) => cue.kind === 'clap' || cue.joint === 'leftHand' || cue.joint === 'rightHand'))
+  assert.ok(legs.every((cue) => cue.kind !== 'clap' && (cue.joint === 'leftFoot' || cue.joint === 'rightFoot')))
+})
+
 test('turns a movement endpoint into a Spot cue', () => {
   const track = makeTrack((data, frame) => {
     const step = frame <= 6 ? frame : 12 - Math.min(frame, 12)

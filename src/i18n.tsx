@@ -1,4 +1,4 @@
-/* oxlint-disable react/only-export-components -- this tiny external store and its button share one stable language source */
+/* oxlint-disable react/only-export-components -- shared translation functions and the language store live together */
 // Tiny i18n with graceful fallback, ported from Investment Time Machine.
 // T(s) looks the English string up in the zh dictionary; anything missing
 // stays English — a gap can never break the UI. The chosen language is
@@ -34,10 +34,6 @@ export function setLang(next: 'en' | 'zh') {
   for (const fn of listeners) fn()
 }
 
-export function toggleLang() {
-  setLang(lang === 'zh' ? 'en' : 'zh')
-}
-
 const subscribe = (fn: () => void) => {
   listeners.add(fn)
   return () => {
@@ -59,20 +55,4 @@ export function T(s: string): string {
 /** Pick between two hand-written variants (for interpolated strings). */
 export function L(en: string, zh: string) {
   return lang === 'zh' ? zh : en
-}
-
-/** The globe button — fixed corner, above every dialog. */
-export function LangGlobe() {
-  useLangTick()
-  const label = lang === 'zh' ? 'Switch to English' : '切换到中文'
-  return (
-    <button className="lang-globe" onClick={toggleLang} aria-label={label} title={label}>
-      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-        <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.6" />
-        <ellipse cx="12" cy="12" rx="4" ry="9" fill="none" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M3.6 9h16.8 M3.6 15h16.8" stroke="currentColor" strokeWidth="1.3" fill="none" />
-      </svg>
-      <span>{lang === 'zh' ? 'EN' : '中'}</span>
-    </button>
-  )
 }

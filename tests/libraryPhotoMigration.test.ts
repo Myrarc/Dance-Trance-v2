@@ -25,7 +25,8 @@ test('a version-three library upgrades without losing songs or score records', a
   legacy.close()
 
   const upgraded = await openLibraryDatabase()
-  assert.equal(upgraded.version, 4)
+  assert.equal(upgraded.version, 5)
+  assert.equal(upgraded.objectStoreNames.contains('beatMaps'), true)
   const read = (store: string, key: string) => new Promise<unknown>((resolve) => {
     const request = upgraded.transaction(store).objectStore(store).get(key)
     request.onsuccess = () => resolve(request.result)

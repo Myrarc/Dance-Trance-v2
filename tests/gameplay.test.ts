@@ -204,3 +204,13 @@ test('clap scoring requires the hands to close instead of merely staying togethe
   assert.ok((scoreCue(cue, together, [{ t: 0, value: apart }, { t: 0.5, value: together }], 0.5, false).match ?? 0) >= 78)
   assert.equal(scoreCue(cue, together, [{ t: 0, value: together }, { t: 0.5, value: together }], 0.5, false).match, null)
 })
+
+test('hard-mode markers at one beat each receive their own limb reading', () => {
+  const together = [targets[0], { ...targets[1], time: 1, poseTime: 1 }]
+  let player = judgeDueCues(newPlayerRound(), (cue) => cue.kind === 'spot' && cue.joint === 'leftHand' ? 90 : 60, 1, together)
+  player = judgeDueCues(player, null, 1 + HIT_WINDOW_S, together)
+  assert.equal(player.judged, 2)
+  assert.equal(player.perfect, 1)
+  assert.equal(player.good, 1)
+  assert.equal(player.miss, 0)
+})

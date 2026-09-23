@@ -61,13 +61,12 @@ function HomeIcon({ index }: { index: number }) {
   return <svg className="home-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icons[index]}</svg>
 }
 
-export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, onLibrary, account }: {
+export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, account }: {
   trackingReady: boolean
   selected: number
   motion: { direction: 'left' | 'right'; turn: number } | null
   onMove: (direction: 'left' | 'right') => void
   onSelect: () => void
-  onLibrary: () => void
   account: ReactNode
 }) {
   const centerRef = useRef<HTMLButtonElement>(null)
@@ -75,7 +74,7 @@ export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, 
   const options = [
     { title: T('Play'), body: T('Turn a song into an arcade round.'), tone: 'yellow' },
     { title: T('Practice Studio'), body: T('Loop, slow down, and focus on the parts that need work.'), tone: 'cyan' },
-    { title: T('Library'), body: T('Pick up a prepared song or bring in a new dance video.'), tone: 'yellow' },
+    { title: L('Library & photos', '舞蹈库与照片'), body: T('Pick up a prepared song or bring in a new dance video.'), tone: 'yellow' },
     { title: T('Settings'), body: T('Adjust tracking overlays, sound, language, and motion.'), tone: 'cream' },
     { title: T('Camera setup'), body: T('Reconnect tracking and register players again.'), tone: 'cyan' },
   ]
@@ -89,7 +88,7 @@ export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, 
     }}>
       <div className="home-topline">
         <Brand />
-        <div className="home-top-actions" data-gesture-skip><button className="btn home-library-link" onClick={onLibrary}>{L('Library & photos', '舞蹈库与照片')}</button><div className="home-account">{account}</div></div>
+        <div className="home-top-actions" data-gesture-skip><div className="home-account">{account}</div></div>
       </div>
       <section className="home-hero">
         <div className="home-copy">
@@ -162,18 +161,26 @@ function Toggle({ label, detail, checked, onChange }: {
   )
 }
 
-export function SettingsScreen({ settings, onChange, onClose }: {
+export function SettingsScreen({ settings, onChange, onClose, onOpenBeatLab }: {
   settings: GameSettings
   onChange: (next: GameSettings) => void
   onClose: () => void
+  onOpenBeatLab?: () => void
 }) {
   const modalRef = useRef<HTMLElement>(null)
+  const beatSequenceRef = useRef(0)
   useModalFocus(modalRef)
   const update = <K extends keyof GameSettings>(key: K, value: GameSettings[K]) =>
     onChange({ ...settings, [key]: value })
 
   return (
-    <main ref={modalRef} className="destination-screen settings-screen" role="dialog" aria-modal="true" aria-labelledby="settings-title" data-gesture-surface onKeyDown={(event) => { if (event.key === 'Escape') onClose() }}>
+    <main ref={modalRef} className="destination-screen settings-screen" role="dialog" aria-modal="true" aria-labelledby="settings-title" data-gesture-surface onKeyDown={(event) => {
+      if (event.key === 'Escape') onClose()
+      if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || event.target instanceof HTMLInputElement) return
+      if (event.key.toLowerCase() === 'z') beatSequenceRef.current = performance.now()
+      else if (event.key.toLowerCase() === 'x' && beatSequenceRef.current > 0 && performance.now() - beatSequenceRef.current <= 1000) { beatSequenceRef.current = 0; onOpenBeatLab?.() }
+      else beatSequenceRef.current = 0
+    }}>
       <div className="screen-title-row">
         <div><span className="kicker">{T('Player preferences')}</span><h1 id="settings-title">{T('Settings')}</h1></div>
         <button className="btn" onClick={onClose}>{T('Back')}</button>

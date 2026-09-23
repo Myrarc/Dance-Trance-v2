@@ -11,10 +11,11 @@
 const DB_NAME = 'dance-trainer'
 import type { ArcadeRecord } from '../game/records'
 
-const DB_VERSION = 4
+const DB_VERSION = 5
 const META_STORE = 'library'
 const BLOB_STORE = 'videos'
 const TRACK_STORE = 'tracks'
+const BEAT_MAP_STORE = 'beatMaps'
 const ARCADE_RECORD_STORE = 'arcadeRecords'
 const RESULT_PHOTO_STORE = 'resultPhotos'
 const RESULT_PHOTO_IMAGE_STORE = 'resultPhotoImages'
@@ -92,6 +93,7 @@ export function openLibraryDatabase(): Promise<IDBDatabase> {
       // Analysed pose tracks, kept apart for the same reason as the footage:
       // listing the library must not drag megabytes off disk.
       if (!db.objectStoreNames.contains(TRACK_STORE)) db.createObjectStore(TRACK_STORE)
+      if (!db.objectStoreNames.contains(BEAT_MAP_STORE)) db.createObjectStore(BEAT_MAP_STORE)
       if (!db.objectStoreNames.contains(ARCADE_RECORD_STORE)) {
         const records = db.createObjectStore(ARCADE_RECORD_STORE, { keyPath: 'id' })
         records.createIndex('videoId', 'videoId')
@@ -405,12 +407,36 @@ export async function getVideo(id: string): Promise<File | Blob | null> {
 
 export async function forget(id: string): Promise<void> {
   try {
+    await tx(BEAT_MAP_STORE, 'readwrite', (s) => s.delete(`song:${id}`))
     await tx(TRACK_STORE, 'readwrite', (s) => s.delete(id))
     await tx(BLOB_STORE, 'readwrite', (s) => s.delete(id))
     await tx(META_STORE, 'readwrite', (s) => s.delete(id))
   } catch {
     /* nothing to do */
   }
+}
+
+export async function readBeatMap(id: string): Promise<unknown> {
+  return (await tx<unknown>(BEAT_MAP_STORE, 'readonly', (s) => s.get(id))) ?? null
+}
+
+export async function writeBeatMap(id: string, value: unknown): Promise<void> {
+  await mutateBeatMap((store) => store.put(value, id))
+}
+
+export async function deleteBeatMap(id: string): Promise<void> {
+  await mutateBeatMap((store) => store.delete(id))
+}
+
+async function mutateBeatMap(run: (store: IDBObjectStore) => void): Promise<void> {
+  const db = await openLibraryDatabase()
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(BEAT_MAP_STORE, 'readwrite')
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error)
+    transaction.onabort = () => reject(transaction.error ?? new Error('Beat map save was aborted.'))
+    run(transaction.objectStore(BEAT_MAP_STORE))
+  })
 }
 
 /** Merges cloud-known dances in as records without footage. */
