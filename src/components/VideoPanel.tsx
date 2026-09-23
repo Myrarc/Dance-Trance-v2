@@ -24,6 +24,7 @@ import { LandmarkSmoother } from '../pose/filter'
 import { sampleTrack, type PoseTrack } from '../pose/track'
 import {
   buildCueChart,
+  nearestVisibleCue,
   upcomingCues,
   type CueEvent,
   type Difficulty,
@@ -79,7 +80,7 @@ interface Props {
   countdown?: number
   gameRun?: number
   onGameEnd?: () => void
-  hitFeedback?: { id: number; grade: HitGrade; time: number } | null
+  hitFeedback?: { id: number; grade: HitGrade; time: number; keys: string[] } | null
 }
 
 
@@ -601,6 +602,8 @@ export default function VideoPanel({
       const markerRadius = Math.max(28, vh * 0.052)
       const upcoming = upcomingCues(cueChartRef.current, v.currentTime, HIT_LEAD_S)
       const feedback = hitFeedbackRef.current
+      const feedbackCue = feedback && v.currentTime >= feedback.time && v.currentTime - feedback.time <= 0.45
+        ? nearestVisibleCue(cueChartRef.current, feedback.time, HIT_LEAD_S, feedback.keys) : null
       const points = upcoming.map((target) => ({
         target,
         x: (mirrorRef.current ? 1 - target.x : target.x) * vw,
@@ -633,8 +636,15 @@ export default function VideoPanel({
         )
         drawCueGlyph(hitCtx, target, x, y, markerRadius, v.currentTime)
       }
-      if (feedback && v.currentTime >= feedback.time && v.currentTime - feedback.time <= 0.45) {
-        drawArcadeHitLabel(hitCtx, vw / 2, vh * 0.8, markerRadius, feedback.grade)
+      if (feedback && feedbackCue) {
+        const x = (mirrorRef.current ? 1 - feedbackCue.x : feedbackCue.x) * vw
+        const y = feedbackCue.y * vh
+        if (!upcoming.includes(feedbackCue)) {
+          drawArcadeHitMarker(hitCtx, x, y, markerRadius, cueColor(feedbackCue),
+            feedbackCue.time - v.currentTime, reduceMotionRef.current)
+          drawCueGlyph(hitCtx, feedbackCue, x, y, markerRadius, v.currentTime)
+        }
+        drawArcadeHitLabel(hitCtx, x, y, markerRadius, feedback.grade)
       }
     }
 

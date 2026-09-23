@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { PoseTrack } from '../src/pose/track.ts'
-import { buildCueChart, removeOverlappingLimbCues, upcomingCues, type CueEvent } from '../src/pose/hitTargets.ts'
+import { buildCueChart, nearestVisibleCue, removeOverlappingLimbCues, upcomingCues, type CueEvent } from '../src/pose/hitTargets.ts'
 
 const fps = 10
 const frames = 40
@@ -238,4 +238,16 @@ test('shows one upcoming cue per limb channel and keeps Hold visible for its dur
   ]
   const visible = upcomingCues(cues, 0.9, 0.8)
   assert.deepEqual(visible.map((cue) => cue.kind), ['hold', 'spot'])
+})
+
+test('phrase feedback anchors to the nearest visible hit circle', () => {
+  const cues: CueEvent[] = [
+    { kind: 'spot', time: 1.5, poseTime: 1.5, joint: 'leftHand', x: 0.2, y: 0.3, feature: {}, confidence: 1 },
+    { kind: 'spot', time: 1.6, poseTime: 1.6, joint: 'rightFoot', x: 0.7, y: 0.8, feature: {}, confidence: 1 },
+  ]
+  assert.equal(nearestVisibleCue(cues, 1.4, 0.8), cues[0])
+  assert.equal(nearestVisibleCue(cues, 1.59, 0.8), cues[1])
+  assert.equal(nearestVisibleCue(cues, 1.59, 0.8, ['lUpperArm']), cues[0])
+  assert.equal(nearestVisibleCue(cues, 1.59, 0.8, ['rForearm']), null)
+  assert.equal(nearestVisibleCue(cues, 3, 0.8), null)
 })

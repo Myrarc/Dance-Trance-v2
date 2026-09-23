@@ -141,7 +141,7 @@ interface Props {
   difficulty?: Difficulty
   onLobbyChange?: (ready: boolean, players: number) => void
   onGameScores?: (players: PlayerRound[]) => void
-  onHit?: (grade: HitGrade, time: number) => void
+  onHit?: (grade: HitGrade, time: number, keys: string[]) => void
   onScoreDebug?: (entries: ScoreDebug[]) => void
   onSoloPresence?: (present: boolean, nowMs: number) => void
   requireCalibration?: boolean
@@ -767,6 +767,7 @@ export default function WebcamPanel({
         let changed = false
         let hitGrade: HitGrade | null = null
         let hitTime = 0
+        let hitKeys: string[] = []
         const scoreDebug: ScoreDebug[] = []
         for (let index = 0; index < registeredPlayerCount; index++) {
           let before = roundsRef.current[index]
@@ -793,19 +794,22 @@ export default function WebcamPanel({
             if (after.perfect > before.perfect) {
               hitGrade = 'perfect'
               hitTime = playbackTime
+              hitKeys = interval.keys
             } else if (after.good > before.good && hitGrade !== 'perfect') {
               hitGrade = 'good'
               hitTime = playbackTime
+              hitKeys = interval.keys
             } else if (after.miss > before.miss && hitGrade === null) {
               hitGrade = 'miss'
               hitTime = playbackTime
+              hitKeys = interval.keys
             }
             before = after
             changed = true
           }
           roundsRef.current[index] = before
         }
-        if (hitGrade) onHit?.(hitGrade, hitTime)
+        if (hitGrade) onHit?.(hitGrade, hitTime, hitKeys)
         if (scoreDebug.length) onScoreDebug?.(scoreDebug)
         if (changed) onGameScores?.(roundsRef.current.slice(0, registeredPlayerCount))
       }

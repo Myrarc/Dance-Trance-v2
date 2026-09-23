@@ -414,3 +414,19 @@ export function upcomingCues(cues: CueEvent[], time: number, leadSeconds: number
   }
   return [...upcoming.values()]
 }
+
+/** Feedback belongs on a circle the player could see when the phrase was judged. */
+export function nearestVisibleCue(cues: CueEvent[], time: number, leadSeconds: number, keys?: string[]): CueEvent | null {
+  const visible = upcomingCues(cues, time, leadSeconds).filter((cue) => {
+    if (!keys?.length) return true
+    if (cue.kind === 'clap') return keys.some((key) => key.includes('UpperArm') || key.includes('Forearm'))
+    const prefix = cue.joint === 'head' ? 'head'
+      : cue.joint === 'leftHand' ? 'l' : cue.joint === 'rightHand' ? 'r'
+        : cue.joint === 'leftFoot' ? 'l' : 'r'
+    if (prefix === 'head') return keys.includes('head')
+    const limb = cue.joint.endsWith('Hand') ? ['UpperArm', 'Forearm'] : ['Thigh', 'Shin']
+    return limb.some((part) => keys.includes(`${prefix}${part}`))
+  })
+  return visible.reduce<CueEvent | null>((nearest, cue) =>
+    !nearest || Math.abs(cue.time - time) < Math.abs(nearest.time - time) ? cue : nearest, null)
+}

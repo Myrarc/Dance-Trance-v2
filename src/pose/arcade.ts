@@ -1,7 +1,7 @@
-import { SIDE_COLORS } from './skeleton'
-import { HIT_LEAD_S, type CueEvent, type HitJoint } from './hitTargets'
+import { SIDE_COLORS } from './skeleton.ts'
+import { HIT_LEAD_S, type CueEvent, type HitJoint } from './hitTargets.ts'
 
-export { HIT_LEAD_S } from './hitTargets'
+export { HIT_LEAD_S } from './hitTargets.ts'
 
 export const HIT_COLORS: Record<HitJoint, string> = {
   head: '#7df4ff',
@@ -128,22 +128,20 @@ export function drawArcadeHitLabel(
   radius: number,
   grade: 'perfect' | 'good' | 'miss',
 ) {
-  const fontSize = Math.max(18, radius * 0.55)
+  const fontSize = Math.max(12, radius * 0.42)
   const label = grade.toUpperCase()
 
   ctx.save()
   ctx.font = `800 ${fontSize}px 'Trance Display', Impact, sans-serif`
-  const lineWidth = Math.max(3, fontSize * 0.16)
-  const labelX = Math.min(x + radius * 0.72, ctx.canvas.width - ctx.measureText(label).width - lineWidth)
-  const labelY = Math.max(y - radius * 0.72, fontSize + lineWidth)
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'bottom'
+  const lineWidth = Math.max(2, fontSize * 0.12)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
   ctx.lineJoin = 'round'
   ctx.lineWidth = lineWidth
   ctx.strokeStyle = '#30233f'
-  ctx.strokeText(label, labelX, labelY)
+  ctx.strokeText(label, x, y, radius * 1.65)
   ctx.fillStyle = grade === 'perfect' ? '#2cb8ba' : grade === 'good' ? '#e7aa33' : '#f06b68'
-  ctx.fillText(label, labelX, labelY)
+  ctx.fillText(label, x, y, radius * 1.65)
   ctx.restore()
 }
 
