@@ -563,7 +563,7 @@ export default function App() {
   }
 
   const pickingSong = !src && navigation.screen !== 'settings' && (activeScreen === 'arcade' || activeScreen === 'practice')
-  const menuMusicActive = !beatLabOpen && !pickingSong && (navigation.screen === 'attract' || !src || (activeScreen === 'arcade' && arcadePhase === 'results') || (activeScreen !== 'arcade' && activeScreen !== 'practice'))
+  const menuMusicActive = !beatLabOpen && !pickingSong && (navigation.screen === 'attract' || !src || (activeScreen === 'arcade' && (arcadePhase === 'results' || (arcadePhase === 'setup' && choosingScoreFocus))) || (activeScreen !== 'arcade' && activeScreen !== 'practice'))
   const menuTheme = MENU_THEMES.find((theme) => theme.id === settings.menuTheme)
   useEffect(() => {
     const audio = menuMusicRef.current
