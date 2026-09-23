@@ -1,4 +1,4 @@
-export type SfxEvent = 'menu' | 'navigateLeft' | 'navigateRight' | 'gestureOne' | 'gestureTwo' | 'gestureThree' | 'countdown' | 'go' | 'perfect' | 'good' | 'combo' | 'result' | 'record'
+export type SfxEvent = 'menu' | 'navigateLeft' | 'navigateRight' | 'gestureOne' | 'gestureTwo' | 'gestureThree' | 'countdown' | 'go' | 'perfect' | 'good' | 'miss' | 'combo' | 'result' | 'record'
 
 const NOTES: Record<SfxEvent, { frequencies: number[]; duration: number; gain: number }> = {
   menu: { frequencies: [330], duration: 0.05, gain: 0.035 },
@@ -11,6 +11,7 @@ const NOTES: Record<SfxEvent, { frequencies: number[]; duration: number; gain: n
   go: { frequencies: [330, 494], duration: 0.14, gain: 0.06 },
   perfect: { frequencies: [660, 880], duration: 0.11, gain: 0.045 },
   good: { frequencies: [440], duration: 0.08, gain: 0.035 },
+  miss: { frequencies: [220], duration: 0.08, gain: 0.025 },
   combo: { frequencies: [523, 659, 784], duration: 0.16, gain: 0.05 },
   result: { frequencies: [262, 330, 392], duration: 0.28, gain: 0.055 },
   record: { frequencies: [523, 659, 784, 1047], duration: 0.34, gain: 0.06 },

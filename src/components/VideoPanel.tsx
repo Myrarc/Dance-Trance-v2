@@ -79,7 +79,7 @@ interface Props {
   countdown?: number
   gameRun?: number
   onGameEnd?: () => void
-  hitFeedback?: { id: number; grade: Exclude<HitGrade, 'miss'>; time: number } | null
+  hitFeedback?: { id: number; grade: HitGrade; time: number } | null
 }
 
 

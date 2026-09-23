@@ -93,7 +93,7 @@ export default function App() {
   const [lobby, setLobby] = useState({ ready: false, players: 0 })
   const [gamePlayers, setGamePlayers] = useState<PlayerRound[]>([])
   const [scoreDebug, setScoreDebug] = useState<ScoreDebug[]>([])
-  const [hitFeedback, setHitFeedback] = useState<{ id: number; grade: Exclude<HitGrade, 'miss'>; time: number } | null>(null)
+  const [hitFeedback, setHitFeedback] = useState<{ id: number; grade: HitGrade; time: number } | null>(null)
   const [gestureSelectedId, setGestureSelectedId] = useState<string | null>(null)
   const [carouselMotion, setCarouselMotion] = useState<{ direction: 'left' | 'right'; turn: number } | null>(null)
   const [homeSelected, setHomeSelected] = useState(0)
@@ -454,7 +454,7 @@ export default function App() {
       return next
     })
   }, [])
-  const showHit = useCallback((grade: Exclude<HitGrade, 'miss'>, time: number) => {
+  const showHit = useCallback((grade: HitGrade, time: number) => {
     setHitFeedback({ id: ++hitFeedbackIdRef.current, grade, time })
     playSfx(grade, settings.soundMuted)
   }, [settings.soundMuted])

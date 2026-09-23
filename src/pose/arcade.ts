@@ -126,23 +126,24 @@ export function drawArcadeHitLabel(
   x: number,
   y: number,
   radius: number,
-  grade: 'perfect' | 'good',
+  grade: 'perfect' | 'good' | 'miss',
 ) {
   const fontSize = Math.max(18, radius * 0.55)
+  const label = grade.toUpperCase()
 
   ctx.save()
   ctx.font = `800 ${fontSize}px 'Trance Display', Impact, sans-serif`
   const lineWidth = Math.max(3, fontSize * 0.16)
-  const labelX = Math.min(x + radius * 0.72, ctx.canvas.width - ctx.measureText('HIT').width - lineWidth)
+  const labelX = Math.min(x + radius * 0.72, ctx.canvas.width - ctx.measureText(label).width - lineWidth)
   const labelY = Math.max(y - radius * 0.72, fontSize + lineWidth)
   ctx.textAlign = 'left'
   ctx.textBaseline = 'bottom'
   ctx.lineJoin = 'round'
   ctx.lineWidth = lineWidth
   ctx.strokeStyle = '#30233f'
-  ctx.strokeText('HIT', labelX, labelY)
-  ctx.fillStyle = grade === 'perfect' ? '#2cb8ba' : '#e7aa33'
-  ctx.fillText('HIT', labelX, labelY)
+  ctx.strokeText(label, labelX, labelY)
+  ctx.fillStyle = grade === 'perfect' ? '#2cb8ba' : grade === 'good' ? '#e7aa33' : '#f06b68'
+  ctx.fillText(label, labelX, labelY)
   ctx.restore()
 }
 
