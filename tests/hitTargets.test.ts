@@ -112,6 +112,58 @@ test('torso sway does not create a Body score note', () => {
   assert.equal(buildCueChart(track, 'hard').length, 0)
 })
 
+test('a clap can happen beside the dancer or above their head', () => {
+  for (const [label, centerX, centerY] of [
+    ['left', 0.17, 0.45],
+    ['right', 0.83, 0.45],
+    ['overhead', 0.5, 0.12],
+  ] as const) {
+    const track = makeTrack((data, frame) => {
+      const spread = frame <= 5
+        ? 0.15 - frame * 0.024
+        : 0.03 + Math.min(frame - 5, 5) * 0.024
+      setPoint(data, frame, 15, centerX - spread, centerY)
+      setPoint(data, frame, 16, centerX + spread, centerY)
+    })
+    const clap = buildCueChart(track, 'hard').find((cue) => cue.kind === 'clap')
+    assert.ok(clap, `${label} clap should produce a note`)
+    assert.ok(Math.abs(clap.x - centerX) < 0.01)
+    assert.ok(Math.abs(clap.y - centerY) < 0.01)
+  }
+})
+
+test('hands overlapping only in the camera projection during a spin do not create a clap', () => {
+  const track = makeTrack((data, frame) => {
+    const spread = frame <= 5
+      ? 0.2 - frame * 0.034
+      : 0.03 + Math.min(frame - 5, 5) * 0.034
+    setPoint(data, frame, 15, 0.5 - spread, 0.45)
+    setPoint(data, frame, 16, 0.5 + spread, 0.45)
+    // Pose-world wrists stay far apart in depth even though their image points overlap.
+    data[frame * stride + 15 * 6 + 5] = -0.3
+    data[frame * stride + 16 * 6 + 5] = 0.3
+  })
+  assert.equal(buildCueChart(track, 'hard').some((cue) => cue.kind === 'clap'), false)
+})
+
+test('hands that come together but never separate do not create a clap', () => {
+  const track = makeTrack((data, frame) => {
+    const spread = 0.2 - Math.min(frame, 5) * 0.034
+    setPoint(data, frame, 15, 0.5 - spread, 0.45)
+    setPoint(data, frame, 16, 0.5 + spread, 0.45)
+  })
+  assert.equal(buildCueChart(track, 'hard').some((cue) => cue.kind === 'clap'), false)
+})
+
+test('hands passing across one another during a turn do not create a clap', () => {
+  const track = makeTrack((data, frame) => {
+    const offset = 0.2 - frame * 0.04
+    setPoint(data, frame, 15, 0.5 - offset, 0.45)
+    setPoint(data, frame, 16, 0.5 + offset, 0.45)
+  })
+  assert.equal(buildCueChart(track, 'hard').some((cue) => cue.kind === 'clap'), false)
+})
+
 test('notes on one limb cannot share visible time, including a hold and a clap', () => {
   const cues: CueEvent[] = [
     { kind: 'spot', time: 1.5, poseTime: 1.5, joint: 'rightFoot', x: 0.7, y: 0.8, feature: {}, confidence: 1 },

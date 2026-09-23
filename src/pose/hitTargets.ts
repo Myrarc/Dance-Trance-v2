@@ -54,6 +54,8 @@ const HOLD_MAX_S = 1.6
 const CLAP_GAP = 0.4
 const CLAP_CLOSE = 0.25
 const CLAP_LOOKBACK_S = 0.5
+const CLAP_WORLD_GAP = 0.9
+const CLAP_RELEASE = 0.25
 
 const POINTS: Record<HitJoint, number[]> = {
   head: [7, 8],
@@ -130,6 +132,25 @@ function wristGap(track: PoseTrack, frame: number): { gap: number; midpoint: Poi
   const scale = bodyScale(track, frame)
   if (!left || !right || !scale) return null
   return { gap: distance(left, right) / scale, midpoint: midpoint(left, right) }
+}
+
+function worldWristGap(track: PoseTrack, frame: number) {
+  if (frame < 0 || frame >= track.frames) return null
+  if (![11, 12, 15, 16].every((index) => landmark(track, frame, index))) return null
+  const world = (index: number) => {
+    const offset = frame * STRIDE + index * VALUES_PER_LANDMARK
+    return [track.data[offset + 3], track.data[offset + 4], track.data[offset + 5]]
+  }
+  const left = world(15)
+  const right = world(16)
+  const leftShoulder = world(11)
+  const rightShoulder = world(12)
+  const vector = left.map((value, index) => value - right[index])
+  const shoulder = leftShoulder.map((value, index) => value - rightShoulder[index])
+  const scale = Math.hypot(...shoulder)
+  return Number.isFinite(scale) && scale > 0.02 && vector.every(Number.isFinite)
+    ? { gap: Math.hypot(...vector) / scale, vector }
+    : null
 }
 
 function featureAt(track: PoseTrack, frame: number): PoseFeature {
@@ -248,6 +269,27 @@ function buildClaps(track: PoseTrack): ClapCue[] {
     const closing = before.gap - current.gap
     if (current.gap > CLAP_GAP || closing < CLAP_CLOSE) continue
     if (current.gap > previous.gap || current.gap > next.gap) continue
+    const beforeWorld = worldWristGap(track, frame - lookback)
+    const currentWorld = worldWristGap(track, frame)
+    if (!beforeWorld || !currentWorld || currentWorld.gap > CLAP_WORLD_GAP
+      || beforeWorld.gap - currentWorld.gap < CLAP_CLOSE) continue
+    // A projected overlap is not enough: the estimated 3D hands must come
+    // together, separate again, and not pass through one another.
+    let released = false
+    for (let afterFrame = frame + 1; afterFrame <= Math.min(track.frames - 1, frame + lookback); afterFrame++) {
+      const after = wristGap(track, afterFrame)
+      const afterWorld = worldWristGap(track, afterFrame)
+      if (!after || !afterWorld) continue
+      const sameSides = beforeWorld.vector.reduce(
+        (sum, value, index) => sum + value * afterWorld.vector[index], 0,
+      ) > 0
+      if (sameSides && after.gap - current.gap >= CLAP_RELEASE
+        && afterWorld.gap - currentWorld.gap >= CLAP_RELEASE) {
+        released = true
+        break
+      }
+    }
+    if (!released) continue
     const time = frame / track.fps
     claps.push({
       kind: 'clap',
