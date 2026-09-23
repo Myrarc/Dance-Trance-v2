@@ -182,6 +182,7 @@ export function SettingsScreen({ settings, onChange, onClose }: {
         <div className="settings-card">
           <h2>{T('Gameplay')}</h2>
           <Toggle label="Show reference skeleton" detail="Display the pose guide over the reference video." checked={settings.showSkeletons} onChange={(value) => update('showSkeletons', value)} />
+          <Toggle label="Show camera skeleton" detail="Display your tracked pose over the live camera." checked={settings.showCameraSkeletons} onChange={(value) => update('showCameraSkeletons', value)} />
           <Toggle label="Track head movements" detail="Include head cues and head position in scoring." checked={settings.trackHead} onChange={(value) => update('trackHead', value)} />
           <Toggle label="Show pose diagnostics" detail="Display tracking confidence and selection details over the game." checked={settings.showPoseDebug} onChange={(value) => update('showPoseDebug', value)} />
         </div>

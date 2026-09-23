@@ -170,6 +170,8 @@ Object.assign(ZH, {
   'Gameplay': '游戏',
   'Show reference skeleton': '显示参考骨架',
   'Display the pose guide over the reference video.': '在参考视频上显示姿态指引。',
+  'Show camera skeleton': '显示摄像头骨架',
+  'Display your tracked pose over the live camera.': '在实时摄像头画面上显示追踪到的姿态。',
   'Track head movements': '追踪头部动作',
   'Include head cues and head position in scoring.': '将头部提示和位置计入评分。',
   'Show pose diagnostics': '显示姿态诊断',
