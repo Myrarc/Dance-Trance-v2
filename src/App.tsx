@@ -563,7 +563,8 @@ export default function App() {
   }
 
   const pickingSong = !src && navigation.screen !== 'settings' && (activeScreen === 'arcade' || activeScreen === 'practice')
-  const menuMusicActive = !beatLabOpen && !pickingSong && (navigation.screen === 'attract' || !src || (activeScreen === 'arcade' && (arcadePhase === 'results' || (arcadePhase === 'setup' && choosingScoreFocus))) || (activeScreen !== 'arcade' && activeScreen !== 'practice'))
+  const menuMusicActive = !beatLabOpen && !pickingSong && (navigation.screen === 'attract' || !src || (activeScreen === 'arcade' && arcadePhase === 'results') || (activeScreen !== 'arcade' && activeScreen !== 'practice'))
+  const choicePreviewActive = activeScreen === 'arcade' && arcadePhase === 'setup' && !!src && (choosingScoreFocus || choosingDifficulty)
   const menuTheme = MENU_THEMES.find((theme) => theme.id === settings.menuTheme)
   useEffect(() => {
     const audio = menuMusicRef.current
@@ -580,11 +581,11 @@ export default function App() {
   useEffect(() => {
     const gameplay = activeScreen === 'arcade' && arcadePhase === 'playing' && !!src
     const songPreview = pickingSong && !!previewEntry && previewSrc?.id === previewEntry.id
-    const librarySong = gameplay || songPreview
-    const audio = gameplay ? gameVideoRef.current : songPreview ? previewRef.current : menuMusicActive ? menuMusicRef.current : null
+    const librarySong = gameplay || songPreview || choicePreviewActive
+    const audio = gameplay ? gameVideoRef.current : songPreview ? previewRef.current : choicePreviewActive ? difficultyPreviewRef.current : menuMusicActive ? menuMusicRef.current : null
     const edge = edgeRef.current
     if (!audio || !edge || beatLabOpen || settings.reducedEffects || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const key = gameplay ? gameMapKey : songPreview ? songMapKey : themeMapKey
+    const key = gameplay || choicePreviewActive ? gameMapKey : songPreview ? songMapKey : themeMapKey
     const manual = key ? beatMaps.get(key) : null
     if (librarySong && !manual) return
     let beatGrid = !manual && menuTheme ? menuBeatCacheRef.current.get(menuTheme.id) ?? null : null
@@ -676,18 +677,18 @@ export default function App() {
       audio.removeEventListener('pause', stop)
       stop()
     }
-  }, [activeScreen, arcadePhase, beatLabOpen, beatMaps, gameMapKey, menuMusicActive, menuTheme, pickingSong, previewEntry, previewSrc, settings.reducedEffects, songMapKey, src, themeMapKey])
+  }, [activeScreen, arcadePhase, beatLabOpen, beatMaps, choicePreviewActive, gameMapKey, menuMusicActive, menuTheme, pickingSong, previewEntry, previewSrc, settings.reducedEffects, songMapKey, src, themeMapKey])
 
   useEffect(() => {
     const audio = difficultyPreviewRef.current
     if (!audio) return
-    if (choosingDifficulty) {
+    if (choicePreviewActive) {
       audio.volume = PREVIEW_VOLUME
       if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) void audio.play().catch(() => undefined)
       return
     }
     if (!audio.paused) return fadeVolume(audio, 0, () => audio.pause())
-  }, [choosingDifficulty, src, activeScreen, arcadePhase])
+  }, [choicePreviewActive, src])
   useEffect(() => { if (!pickingSong) setCarouselMotion(null) }, [pickingSong])
   useEffect(() => {
     if (!carouselMotion) return
@@ -1028,7 +1029,7 @@ export default function App() {
         const audio = event.currentTarget
         difficultyPreviewStartRef.current = Math.min(12, Math.max(0, audio.duration - 8))
         audio.currentTime = selectedPreviewTimeRef.current || difficultyPreviewStartRef.current
-      }} onCanPlay={(event) => { if (choosingDifficulty) void event.currentTarget.play().catch(() => undefined) }} onTimeUpdate={(event) => {
+      }} onCanPlay={(event) => { if (choicePreviewActive) void event.currentTarget.play().catch(() => undefined) }} onTimeUpdate={(event) => {
         if (event.currentTarget.currentTime >= difficultyPreviewStartRef.current + 7) event.currentTarget.currentTime = difficultyPreviewStartRef.current
       }} />}
       <input ref={fileInputRef} hidden type="file" accept="video/*" onChange={(event) => { void loadFile(event.target.files?.[0], fileDestinationRef.current); event.target.value = '' }} />
