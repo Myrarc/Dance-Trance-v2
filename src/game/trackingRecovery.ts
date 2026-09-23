@@ -35,3 +35,7 @@ export function recoveryCountdown(state: TrackingRecovery, nowMs: number): numbe
 export function effectiveTrackingPhase(phase: GamePhase, recovery: TrackingRecovery): GamePhase {
   return phase === 'playing' && recovery.mode !== 'playing' ? 'paused' : phase
 }
+
+export function advanceRoundRecovery(state: TrackingRecovery, phase: GamePhase, present: boolean, nowMs: number): TrackingRecovery {
+  return phase === 'playing' ? advanceTrackingRecovery(state, present, nowMs) : initialTrackingRecovery
+}

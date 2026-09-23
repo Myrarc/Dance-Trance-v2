@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { advanceTrackingRecovery, effectiveTrackingPhase, initialTrackingRecovery, recoveryCountdown } from '../src/game/trackingRecovery.ts'
+import { advanceRoundRecovery, advanceTrackingRecovery, effectiveTrackingPhase, initialTrackingRecovery, recoveryCountdown } from '../src/game/trackingRecovery.ts'
 
 test('brief absence keeps the song playing, but one second pauses it', () => {
   const missing = advanceTrackingRecovery(initialTrackingRecovery, false, 0)
@@ -38,4 +38,11 @@ test('manual pause stays manual, regardless of tracking recovery', () => {
   const finding = { ...initialTrackingRecovery, mode: 'finding' as const }
   assert.equal(effectiveTrackingPhase('paused', finding), 'paused')
   assert.equal(effectiveTrackingPhase('playing', finding), 'paused')
+})
+
+test('leaving play clears a pending automatic recovery', () => {
+  const finding = advanceTrackingRecovery(advanceTrackingRecovery(initialTrackingRecovery, false, 0), false, 1000)
+  assert.deepEqual(advanceRoundRecovery(finding, 'paused', false, 1100), initialTrackingRecovery)
+  assert.deepEqual(advanceRoundRecovery(finding, 'lobby', false, 1100), initialTrackingRecovery)
+  assert.deepEqual(advanceRoundRecovery(finding, 'results', false, 1100), initialTrackingRecovery)
 })
