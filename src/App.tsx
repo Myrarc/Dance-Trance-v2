@@ -27,12 +27,12 @@ import { beatPulseAt } from './lib/menuPulse'
 import { loadBeatMap, manualGlowAt, songBeatKey, themeBeatKey, type BeatMap } from './lib/beatMaps'
 import { spawnEdgeStars } from './lib/edgeStars'
 import { playSfx } from './lib/sfx'
-import { accuracy, type GamePhase, type HitGrade, type PlayerRound } from './pose/gameplay'
-import type { CueEvent, Difficulty } from './pose/hitTargets'
+import { accuracy, recordEligible, type GamePhase, type HitGrade, type PlayerRound } from './pose/gameplay'
+import type { Difficulty } from './pose/hitTargets'
 import type { GestureContext, MenuGesture } from './pose/gestures'
 import { gameReducer, initialGameState, type AppScreen } from './game/state'
 import { advanceRoundRecovery, effectiveTrackingPhase, initialTrackingRecovery, recoveryCountdown } from './game/trackingRecovery'
-import { mergeCloudRecords, recordCompletedRound, recordsForCloud, type ArcadeRecord } from './game/records'
+import { arcadeRecordId, mergeCloudRecords, recordCompletedRound, recordsForCloud, type ArcadeRecord } from './game/records'
 import { photoPrompt } from './game/resultPhoto'
 import { composeResultPhoto } from './lib/resultPhotoImage'
 import { saveResultPhoto } from './lib/resultPhotos'
@@ -71,7 +71,8 @@ export default function App() {
   const [dragOver, setDragOver] = useState(false)
   const [library, setLibrary] = useState<LibraryEntry[]>([])
   const [records, setRecords] = useState<ArcadeRecord[]>([])
-  const [resultRecords, setResultRecords] = useState<ResultRecord[]>([])
+  const [resultRecords, setResultRecords] = useState<(ResultRecord | null)[]>([])
+  const [recordSyncError, setRecordSyncError] = useState(false)
   const [stats, setStats] = useState<Map<string, VideoStats>>(new Map())
   const [current, setCurrent] = useState<LibraryEntry | null>(null)
   const [focus, setFocus] = useState<Focus>('full')
@@ -92,7 +93,7 @@ export default function App() {
   const [lobby, setLobby] = useState({ ready: false, players: 0 })
   const [gamePlayers, setGamePlayers] = useState<PlayerRound[]>([])
   const [scoreDebug, setScoreDebug] = useState<ScoreDebug[]>([])
-  const [hitFeedback, setHitFeedback] = useState<{ id: number; grade: Exclude<HitGrade, 'miss'>; target: CueEvent } | null>(null)
+  const [hitFeedback, setHitFeedback] = useState<{ id: number; grade: Exclude<HitGrade, 'miss'>; time: number } | null>(null)
   const [gestureSelectedId, setGestureSelectedId] = useState<string | null>(null)
   const [carouselMotion, setCarouselMotion] = useState<{ direction: 'left' | 'right'; turn: number } | null>(null)
   const [homeSelected, setHomeSelected] = useState(0)
@@ -217,11 +218,17 @@ export default function App() {
     if (localLibrary.length) {
       await syncLibrary(localLibrary.map((entry) => ({ id: entry.id, name: entry.name, duration: entry.duration, lastOpenedAt: entry.lastOpenedAt })))
     }
-    if (localRecords.length) await syncArcadeRecords(recordsForCloud(localRecords))
     const [sessions, remoteLibrary, remoteRecords] = await Promise.all([loadSessions(), loadLibraryIndex(), loadArcadeRecords()])
     setStats(statsByVideo(sessions))
     if (remoteLibrary.length) await mergeRemote(remoteLibrary)
-    if (remoteRecords.length) await putArcadeRecords(mergeCloudRecords(localRecords, remoteRecords))
+    const mergedRecords = mergeCloudRecords(localRecords, remoteRecords)
+    if (mergedRecords.length) await putArcadeRecords(mergedRecords)
+    try {
+      await syncArcadeRecords(recordsForCloud(mergedRecords))
+      setRecordSyncError(false)
+    } catch {
+      setRecordSyncError(true)
+    }
     await refresh()
   }, [refresh])
 
@@ -379,11 +386,15 @@ export default function App() {
     dispatch({ type: 'finishRound' })
     if (!current || !gamePlayers.length) return
     const completedAt = Date.now()
-    const outcomes: ResultRecord[] = []
+    const outcomes: (ResultRecord | null)[] = []
     for (let index = 0; index < gamePlayers.length; index++) {
       const player = gamePlayers[index]
+      if (!recordEligible(player)) {
+        outcomes.push(null)
+        continue
+      }
       const playerSlot = (index + 1) as 1 | 2
-      const existing = await getArcadeRecord(`${current.id}:${difficulty}:${playerSlot}`)
+      const existing = await getArcadeRecord(arcadeRecordId(current.id, difficulty, playerSlot))
       const outcome = recordCompletedRound(existing, {
         videoId: current.id, difficulty, playerSlot, score: player.score,
         accuracy: accuracy(player), maxCombo: player.maxCombo, completedAt,
@@ -394,8 +405,9 @@ export default function App() {
     setResultRecords(outcomes)
     const fresh = await listArcadeRecords()
     setRecords(fresh)
-    playSfx(outcomes.some((outcome) => outcome.isNewBest) ? 'record' : 'result', settings.soundMuted)
-    void syncArcadeRecords(recordsForCloud(fresh))
+    playSfx(outcomes.some((outcome) => outcome?.isNewBest) ? 'record' : 'result', settings.soundMuted)
+    void syncArcadeRecords(recordsForCloud(fresh)).then(() => setRecordSyncError(false))
+      .catch(() => setRecordSyncError(true))
   }
 
   const captureResultPhoto = async () => {
@@ -442,8 +454,8 @@ export default function App() {
       return next
     })
   }, [])
-  const showHit = useCallback((grade: Exclude<HitGrade, 'miss'>, target: CueEvent) => {
-    setHitFeedback({ id: ++hitFeedbackIdRef.current, grade, target })
+  const showHit = useCallback((grade: Exclude<HitGrade, 'miss'>, time: number) => {
+    setHitFeedback({ id: ++hitFeedbackIdRef.current, grade, time })
     playSfx(grade, settings.soundMuted)
   }, [settings.soundMuted])
 
@@ -1059,8 +1071,9 @@ export default function App() {
       {activeScreen === 'arcade' && renderArcade()}
       {activeScreen === 'practice' && renderPractice()}
       {activeScreen === 'library' && renderLibrary()}
+      {recordSyncError && <div className="record-sync-warning" role="alert">{L('Personal bests are saved here, but account sync failed.', '个人最佳成绩已保存在本机，但账号同步失败。')} <button onClick={() => void syncFromAccount()}>{L('Retry', '重试')}</button></div>}
       {navigation.screen !== 'attract' && <Suspense fallback={null}><div className={`camera-dock camera-${navigation.screen === 'tracking' ? 'tracking' : activeScreen === 'arcade' ? arcadePhase : activeScreen}${cameraRunning ? '' : ' camera-off'}`}>
-        <WebcamPanel targetRef={targetRef} videoId={current?.id} videoName={current?.name} onSectionPractice={(deltas) => void recordSectionPractice(deltas)} focus={focus} onFocusChange={setFocus} showSkeletons={settings.showCameraSkeletons} trackHead={settings.trackHead} showPoseDebug={settings.showPoseDebug} onPhotoFrameReady={onPhotoFrameReady} gamePhase={activeScreen === 'arcade' ? gamePhase : 'lobby'} gameRun={gameRun} difficulty={difficulty} onLobbyChange={updateLobby} onGameScores={updateGameScores} onHit={showHit} onScoreDebug={import.meta.env.DEV ? updateScoreDebug : undefined} onSoloPresence={reportSoloPresence} registrationPlayers={registrationPlayers} onRegistrationPlayersChange={setRegistrationPlayers} registrationScreen={navigation.screen === 'tracking'} gestureContext={gestureContext} onGestureAction={handleGestureAction} soundMuted={settings.soundMuted} onRunningChange={setCameraRunning} />
+        <WebcamPanel targetRef={targetRef} playbackRef={gameVideoRef} track={track} videoId={current?.id} videoName={current?.name} onSectionPractice={(deltas) => void recordSectionPractice(deltas)} focus={focus} onFocusChange={setFocus} showSkeletons={settings.showCameraSkeletons} trackHead={settings.trackHead} showPoseDebug={settings.showPoseDebug} onPhotoFrameReady={onPhotoFrameReady} gamePhase={activeScreen === 'arcade' ? gamePhase : 'lobby'} gameRun={gameRun} difficulty={difficulty} onLobbyChange={updateLobby} onGameScores={updateGameScores} onHit={showHit} onScoreDebug={import.meta.env.DEV ? updateScoreDebug : undefined} onSoloPresence={reportSoloPresence} registrationPlayers={registrationPlayers} onRegistrationPlayersChange={setRegistrationPlayers} registrationScreen={navigation.screen === 'tracking'} gestureContext={gestureContext} onGestureAction={handleGestureAction} soundMuted={settings.soundMuted} onRunningChange={setCameraRunning} />
       </div></Suspense>}
       {navigation.screen === 'settings' && (beatLabOpen
         ? <BeatLab library={library} initialTheme={settings.menuTheme} onClose={() => setBeatLabOpen(false)} onMapChange={(key, map) => setBeatMaps((previous) => new Map(previous).set(key, map))} />

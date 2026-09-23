@@ -2,11 +2,55 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { accuracy, gradeMatch, HIT_WINDOW_S, isGameRunReady, judgeDueCues, movementBaseline, newPlayerRound, scoreCue, stablePlayerOrder, type CueFrame } from '../src/pose/gameplay.ts'
 import { compareHitAngles, compareToHistory, hasHitMovement, type PoseFeature } from '../src/pose/angles.ts'
+import * as gameplay from '../src/pose/gameplay.ts'
 
 const targets = [
   { kind: 'spot' as const, time: 1, poseTime: 1, joint: 'leftHand' as const, x: 0.2, y: 0.3, feature: {}, confidence: 1 },
   { kind: 'spot' as const, time: 2, poseTime: 2, joint: 'rightHand' as const, x: 0.8, y: 0.3, feature: {}, confidence: 1 },
 ]
+
+test('movement quality gives partial credit and tracking gaps cannot create a record', () => {
+  assert.ok('newMotionRound' in gameplay && 'advanceMotionRound' in gameplay && 'trackingCoverage' in gameplay)
+  let round = gameplay.newMotionRound()
+  round = gameplay.advanceMotionRound(round, { quality: 0.88, coverage: 1, lag: 0 }, 'move')
+  round = gameplay.advanceMotionRound(round, { quality: 0.58, coverage: 1, lag: 0 }, 'move')
+  assert.equal(round.perfect, 1)
+  assert.equal(round.good, 1)
+  assert.ok(round.score > 1400)
+  round = gameplay.advanceMotionRound(round, { quality: null, coverage: 0, lag: 0 }, 'move')
+  assert.equal(round.combo, 2)
+  assert.equal(gameplay.trackingCoverage(round), 67)
+  assert.equal(gameplay.recordEligible(round), false)
+  assert.equal(accuracy(round), 73)
+})
+
+test('an unfinished run cannot turn sparse tracked movement into a personal best', () => {
+  const round = gameplay.advanceMotionRound(
+    gameplay.newMotionRound(4),
+    { quality: 0.92, coverage: 1, lag: 0 },
+    'move',
+  )
+  assert.equal(gameplay.trackingCoverage(round), 25)
+  assert.equal(gameplay.recordEligible(round), false)
+})
+
+test('two players keep independent movement points, timing, and combo', () => {
+  const first = gameplay.advanceMotionRound(
+    gameplay.newMotionRound(1),
+    { quality: 0.9, coverage: 1, lag: 0.1 },
+    'move',
+  )
+  const second = gameplay.advanceMotionRound(
+    gameplay.newMotionRound(1),
+    { quality: 0.5, coverage: 1, lag: -0.2 },
+    'move',
+  )
+  assert.equal(first.perfect, 1)
+  assert.equal(second.good, 1)
+  assert.ok(first.score > second.score)
+  assert.equal(first.lag, 0.1)
+  assert.equal(second.lag, -0.2)
+})
 
 test('scores each due marker once and resets combo on a miss', () => {
   let player = judgeDueCues(newPlayerRound(), 90, 1, targets)

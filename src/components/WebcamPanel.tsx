@@ -1,5 +1,5 @@
 import { L, T } from '../i18n'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { NormalizedLandmark, PoseLandmarker } from '@mediapipe/tasks-vision'
 import { createPoseLandmarker } from '../pose/landmarker'
@@ -27,17 +27,18 @@ import {
   type MenuGesture,
 } from '../pose/gestures'
 import {
-  judgeDueCues,
+  advanceMotionRound,
   isGameRunReady,
-  newPlayerRound,
-  gradeMatch,
-  scoreCue,
+  newMotionRound,
   type CueFrame,
   type GamePhase,
   type HitGrade,
+  type MotionRound,
   type PlayerRound,
 } from '../pose/gameplay'
-import type { CueEvent, Difficulty } from '../pose/hitTargets'
+import { advanceScoringClock, buildMotionIntervals, evaluateMotionInterval, liveMotionFrame, motionLagLimit, referenceMotionFrames, type MotionFrame } from '../pose/motionScore'
+import type { Difficulty } from '../pose/hitTargets'
+import type { PoseTrack } from '../pose/track'
 
 /** Whether to mirror the comparison; 'auto' follows the reference's facing. */
 type MirrorMode = 'auto' | 'mirror' | 'direct'
@@ -121,6 +122,8 @@ export interface SectionPractice {
 
 interface Props {
   targetRef: React.MutableRefObject<TargetPose>
+  playbackRef?: React.MutableRefObject<HTMLVideoElement | null>
+  track?: PoseTrack | null
   /** Which dance is loaded, so practice is filed against it in the library. */
   videoId?: string
   videoName?: string
@@ -138,7 +141,7 @@ interface Props {
   difficulty?: Difficulty
   onLobbyChange?: (ready: boolean, players: number) => void
   onGameScores?: (players: PlayerRound[]) => void
-  onHit?: (grade: Exclude<HitGrade, 'miss'>, target: CueEvent) => void
+  onHit?: (grade: Exclude<HitGrade, 'miss'>, time: number) => void
   onScoreDebug?: (entries: ScoreDebug[]) => void
   onSoloPresence?: (present: boolean, nowMs: number) => void
   requireCalibration?: boolean
@@ -154,15 +157,17 @@ interface Props {
 
 export interface ScoreDebug {
   player: number
-  cue: CueEvent['kind']
+  cue: 'move' | 'hold'
   movement: number | null
   match: number | null
   lag: number
-  grade: HitGrade
+  grade: HitGrade | 'unscored'
 }
 
 export default function WebcamPanel({
   targetRef,
+  playbackRef,
+  track,
   videoId,
   videoName,
   onSectionPractice,
@@ -196,6 +201,14 @@ export default function WebcamPanel({
   trackHeadRef.current = trackHead
   const difficultyRef = useRef(difficulty)
   difficultyRef.current = difficulty
+  const motionChart = useMemo(() => {
+    const frames = track ? referenceMotionFrames(track) : []
+    return { frames, intervals: buildMotionIntervals(frames, focus, trackHead) }
+  }, [track, focus, trackHead])
+  const motionChartRef = useRef(motionChart)
+  motionChartRef.current = motionChart
+  const playbackRefRef = useRef(playbackRef)
+  playbackRefRef.current = playbackRef
   // Per-phrase totals for this session, plus the clock used to charge time to
   // whichever phrase was on screen.
   const sectionAccumRef = useRef<Record<string, SectionPractice>>({})
@@ -230,6 +243,8 @@ export default function WebcamPanel({
   // The lag estimate persists between frames so it can settle.
   const lagStatesRef = useRef<LagState[]>([{ lag: 0 }, { lag: 0 }])
   const movementHistoryRef = useRef<{ t: number; value: CueFrame }[][]>([[], []])
+  const motionHistoryRef = useRef<MotionFrame[][]>([[], []])
+  const playbackEndedAtRef = useRef(0)
   const playerSmoothersRef = useRef([new LandmarkSmoother(), new LandmarkSmoother()])
   const playerWorldSmoothersRef = useRef([new LandmarkSmoother(), new LandmarkSmoother()])
   const registrationStateRef = useRef(initialRegistration(0))
@@ -240,7 +255,7 @@ export default function WebcamPanel({
   const registrationPlayersRef = useRef(registrationPlayers)
   registrationPlayersRef.current = registrationPlayers
   const registeredPlayerCountRef = useRef(1)
-  const roundsRef = useRef<PlayerRound[]>([newPlayerRound(), newPlayerRound()])
+  const roundsRef = useRef<MotionRound[]>([newMotionRound(), newMotionRound()])
   const gestureHoldRef = useRef<GestureHold>({ ...EMPTY_GESTURE_HOLD })
   const pauseHoldRef = useRef<ReturnType<typeof advancePauseHold>['hold']>(null)
   const gestureContextRef = useRef(gestureContext)
@@ -357,9 +372,12 @@ export default function WebcamPanel({
     // one camera frame while it is being rewound. Do not let that stale clock
     // consume the new round's targets as misses.
     registeredPlayerCountRef.current = playerLockRef.current?.slots.length ?? registrationPlayersRef.current
-    roundsRef.current = [newPlayerRound(), newPlayerRound()]
+    const expected = motionChartRef.current.intervals.length
+    roundsRef.current = [newMotionRound(expected), newMotionRound(expected)]
+    playbackEndedAtRef.current = 0
     lagStatesRef.current = [{ lag: 0 }, { lag: 0 }]
     movementHistoryRef.current = [[], []]
+    motionHistoryRef.current = [[], []]
     onGameScores?.(roundsRef.current.slice(0, registeredPlayerCountRef.current))
   }, [gamePhase, gameRun, onGameScores])
 
@@ -512,6 +530,15 @@ export default function WebcamPanel({
       meter.record(presentedFrames, frameNow)
       const timestampMs = frameTimestampMs(metadata?.mediaTime ?? Number.NaN, frameNow)
       const input = (inferenceCanvasRef.current ??= document.createElement('canvas'))
+      const playbackVideo = playbackRefRef.current?.current
+      const scoringClock = advanceScoringClock(
+        playbackVideo?.currentTime ?? targetRef.current.time,
+        playbackVideo?.ended ?? false,
+        frameNow,
+        playbackEndedAtRef.current,
+      )
+      playbackEndedAtRef.current = scoringClock.endedAt
+      const playbackTime = scoringClock.time
       const inputHeight = Math.round(LIVE_INPUT_WIDTH * v.videoHeight / v.videoWidth)
       if (input.width !== LIVE_INPUT_WIDTH || input.height !== inputHeight) {
         input.width = LIVE_INPUT_WIDTH
@@ -725,7 +752,7 @@ export default function WebcamPanel({
         onSoloPresenceRef.current?.(playerFrames[0] !== null, frameNow)
       }
 
-      if (gamePhase === 'playing' && isGameRunReady(target.gameRun, gameRun) && target.cueChart?.length) {
+      if (gamePhase === 'playing' && isGameRunReady(target.gameRun, gameRun) && motionChartRef.current.intervals.length) {
         const cameraTime = frameNow / 1000
         for (let index = 0; index < registeredPlayerCount; index++) {
           const frame = playerFrames[index]
@@ -733,56 +760,49 @@ export default function WebcamPanel({
           const history = movementHistoryRef.current[index]
           history.push({ t: cameraTime, value: frame })
           while (history.length > 1 && history[0].t < cameraTime - 2.2) history.shift()
+          const motionHistory = motionHistoryRef.current[index]
+          motionHistory.push(liveMotionFrame(playbackTime, frame.feature, frame.landmarks))
+          while (motionHistory.length > 1 && motionHistory[0].t < playbackTime - 2.5) motionHistory.shift()
         }
         let changed = false
         let hitGrade: Exclude<HitGrade, 'miss'> | null = null
-        let hitTarget: CueEvent | null = null
+        let hitTime = 0
         const scoreDebug: ScoreDebug[] = []
         for (let index = 0; index < registeredPlayerCount; index++) {
-          const before = roundsRef.current[index]
-          const frame = playerFrames[index]
+          let before = roundsRef.current[index]
           const mirrored = mirrorModeRef.current === 'auto'
             ? target.facing !== 'back'
             : mirrorModeRef.current === 'mirror'
-          const after = judgeDueCues(
-            before,
-            (cue) => {
-              const reading = scoreCue(
-                cue,
-                frame,
-                movementHistoryRef.current[index],
-                cameraTime,
-                mirrored,
-                trackHeadRef.current,
-              )
-              scoreDebug.push({
-                player: index + 1,
-                cue: cue.kind,
-                movement: reading.movement,
-                match: reading.match,
-                lag: lagStatesRef.current[index].lag,
-                grade: gradeMatch(reading.match),
-              })
-              return reading.match
-            },
-            target.time,
-            target.cueChart,
-            registrationPlayersRef.current === 1 ? frame !== null : undefined,
-            difficultyRef.current,
-          )
-          roundsRef.current[index] = after
-          if (after !== before) {
-            changed = true
+          const { frames, intervals } = motionChartRef.current
+          while (before.nextTarget < intervals.length) {
+            const interval = intervals[before.nextTarget]
+            if (playbackTime < interval.end + motionLagLimit(difficultyRef.current) + 0.02) break
+            const reading = evaluateMotionInterval(
+              interval, frames, motionHistoryRef.current[index], difficultyRef.current, before.lag, mirrored,
+              before.judged > 0,
+            )
+            const after = advanceMotionRound(before, reading, interval.kind)
+            scoreDebug.push({
+              player: index + 1,
+              cue: interval.kind,
+              movement: null,
+              match: reading.quality === null ? null : Math.round(reading.quality * 100),
+              lag: reading.lag,
+              grade: reading.quality === null ? 'unscored' : after.lastGrade ?? 'miss',
+            })
             if (after.perfect > before.perfect) {
               hitGrade = 'perfect'
-              hitTarget = target.cueChart[before.nextTarget]
+              hitTime = playbackTime
             } else if (after.good > before.good && hitGrade !== 'perfect') {
               hitGrade = 'good'
-              hitTarget = target.cueChart[before.nextTarget]
+              hitTime = playbackTime
             }
+            before = after
+            changed = true
           }
+          roundsRef.current[index] = before
         }
-        if (hitGrade && hitTarget) onHit?.(hitGrade, hitTarget)
+        if (hitGrade) onHit?.(hitGrade, hitTime)
         if (scoreDebug.length) onScoreDebug?.(scoreDebug)
         if (changed) onGameScores?.(roundsRef.current.slice(0, registeredPlayerCount))
       }

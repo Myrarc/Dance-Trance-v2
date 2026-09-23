@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { T, L } from '../i18n'
-import { accuracy, type PlayerRound } from '../pose/gameplay'
+import { accuracy, recordEligible, trackingCoverage, type PlayerRound } from '../pose/gameplay'
 import type { Difficulty } from '../pose/hitTargets'
 import { gradeFromAccuracy, type ArcadeRecord, type Grade } from '../game/records'
 import { MENU_THEMES, type GameSettings } from '../lib/gameSettings'
@@ -265,7 +265,7 @@ export interface ResultRecord {
 export function ResultsScreen({ players, difficulty, records, reducedEffects, photoRound, photoPrompt, onCapture, onReplay, onChooseSong, onHome }: {
   players: PlayerRound[]
   difficulty: Difficulty
-  records: ResultRecord[]
+  records: (ResultRecord | null)[]
   reducedEffects: boolean
   photoRound: number
   photoPrompt: string
@@ -350,7 +350,9 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
               <h3>{T('Player')} {index + 1}</h3>
               <strong className="result-score"><AnimatedScore value={player.score} reduced={reducedEffects} /></strong>
               <div className="result-breakdown">
-                <span><b>{resultAccuracy}%</b> {T('accuracy')} · <b>{player.maxCombo}×</b> {T('max combo')}</span>
+                  <span><b>{resultAccuracy}%</b> {T('accuracy')} · <b>{player.maxCombo}×</b> {T('max combo')}</span>
+                  <small>{L(`${trackingCoverage(player)}% tracking coverage`, `追踪覆盖率 ${trackingCoverage(player)}%`)}</small>
+                  {!recordEligible(player) && <small>{L('Provisional score — not enough tracked movement for a personal best.', '临时成绩：追踪到的动作不足，无法记为个人最佳。')}</small>}
                 <small><b>P</b> {player.perfect} {T('Perfect')} · <b>G</b> {player.good} {T('Good')} · <b>M</b> {player.miss} {T('Miss')}</small>
                 {records[index] && <small>{T('Personal best')}: {records[index].record.bestScore.toLocaleString()}</small>}
               </div>

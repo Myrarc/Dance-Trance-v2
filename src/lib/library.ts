@@ -11,7 +11,7 @@
 const DB_NAME = 'dance-trainer'
 import type { ArcadeRecord } from '../game/records'
 
-const DB_VERSION = 5
+const DB_VERSION = 6
 const META_STORE = 'library'
 const BLOB_STORE = 'videos'
 const TRACK_STORE = 'tracks'
@@ -84,7 +84,7 @@ let dbPromise: Promise<IDBDatabase> | null = null
 export function openLibraryDatabase(): Promise<IDBDatabase> {
   dbPromise ??= new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (event) => {
       const db = req.result
       // Metadata and footage are separate stores so listing the library never
       // has to pull hundreds of megabytes of video off disk.
@@ -98,6 +98,7 @@ export function openLibraryDatabase(): Promise<IDBDatabase> {
         const records = db.createObjectStore(ARCADE_RECORD_STORE, { keyPath: 'id' })
         records.createIndex('videoId', 'videoId')
       }
+      if (event.oldVersion < 6) req.transaction?.objectStore(ARCADE_RECORD_STORE).clear()
       if (!db.objectStoreNames.contains(RESULT_PHOTO_STORE)) db.createObjectStore(RESULT_PHOTO_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(RESULT_PHOTO_IMAGE_STORE)) db.createObjectStore(RESULT_PHOTO_IMAGE_STORE)
     }
@@ -126,7 +127,8 @@ function tx<T>(store: string, mode: IDBTransactionMode, run: (s: IDBObjectStore)
 
 export async function listArcadeRecords(): Promise<ArcadeRecord[]> {
   try {
-    return await tx<ArcadeRecord[]>(ARCADE_RECORD_STORE, 'readonly', (store) => store.getAll())
+    return (await tx<ArcadeRecord[]>(ARCADE_RECORD_STORE, 'readonly', (store) => store.getAll()))
+      .filter((record) => record.scoringVersion === 2)
   } catch {
     return []
   }
@@ -134,7 +136,8 @@ export async function listArcadeRecords(): Promise<ArcadeRecord[]> {
 
 export async function getArcadeRecord(id: string): Promise<ArcadeRecord | null> {
   try {
-    return (await tx<ArcadeRecord | undefined>(ARCADE_RECORD_STORE, 'readonly', (store) => store.get(id))) ?? null
+    const record = await tx<ArcadeRecord | undefined>(ARCADE_RECORD_STORE, 'readonly', (store) => store.get(id))
+    return record?.scoringVersion === 2 ? record : null
   } catch {
     return null
   }

@@ -24,7 +24,7 @@ function openLegacyDatabase() {
   })
 }
 
-test('version five preserves the library and adds durable records, photos, and beat maps', async () => {
+test('version six preserves the library and adds durable new records, photos, and beat maps', async () => {
   await new Promise<void>((resolve) => {
     const request = indexedDB.deleteDatabase('dance-trainer')
     request.onsuccess = () => resolve()
@@ -39,7 +39,7 @@ test('version five preserves the library and adds durable records, photos, and b
   legacy.close()
 
   const upgraded = await openLibraryDatabase()
-  assert.equal(upgraded.version, 5)
+  assert.equal(upgraded.version, 6)
   assert.equal(upgraded.objectStoreNames.contains('beatMaps'), true)
   assert.equal(upgraded.objectStoreNames.contains('library'), true)
   assert.equal(upgraded.objectStoreNames.contains('arcadeRecords'), true)
@@ -53,7 +53,8 @@ test('version five preserves the library and adds durable records, photos, and b
   assert.equal(legacySong.name, 'Legacy Song')
 
   const record: ArcadeRecord = {
-    id: 'song:easy:1', videoId: 'song', difficulty: 'easy', playerSlot: 1,
+    scoringVersion: 2,
+    id: 'v2:song:easy:1', videoId: 'song', difficulty: 'easy', playerSlot: 1,
     bestScore: 500, bestAccuracy: 75, bestGrade: 'B', maxCombo: 5,
     playCount: 1, updatedAt: 123,
   }

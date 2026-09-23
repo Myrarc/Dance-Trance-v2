@@ -3267,3 +3267,5 @@ input[type='range'] { accent-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .result-photo-flash { display: none; }
 }
+.record-sync-warning { position: fixed; z-index: 200; left: 50%; bottom: 16px; transform: translateX(-50%); max-width: min(90vw, 640px); padding: 12px 16px; border: 3px solid var(--ink); border-radius: 10px; background: var(--panel); color: var(--ink); box-shadow: 5px 5px 0 var(--ink); font-weight: 800; text-align: center; }
+.record-sync-warning button { margin-left: 12px; padding: 4px 10px; border: 2px solid var(--ink); border-radius: 6px; background: var(--cyan); color: var(--ink); font: inherit; cursor: pointer; }

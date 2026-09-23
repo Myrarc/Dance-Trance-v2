@@ -79,7 +79,7 @@ interface Props {
   countdown?: number
   gameRun?: number
   onGameEnd?: () => void
-  hitFeedback?: { id: number; grade: Exclude<HitGrade, 'miss'>; target: CueEvent } | null
+  hitFeedback?: { id: number; grade: Exclude<HitGrade, 'miss'>; time: number } | null
 }
 
 
@@ -184,6 +184,11 @@ export default function VideoPanel({
   const sectionsRef = useRef<Section[]>([])
   sectionsRef.current = sections
   const videoRef = useRef<HTMLVideoElement>(null)
+  const gameEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (gameEndTimerRef.current !== null) clearTimeout(gameEndTimerRef.current)
+    gameEndTimerRef.current = null
+  }, [src, gameRun, gamePhase])
   const setVideoRef = useCallback((video: HTMLVideoElement | null) => {
     videoRef.current = video
     if (playbackRef) playbackRef.current = video
@@ -596,12 +601,6 @@ export default function VideoPanel({
       const markerRadius = Math.max(28, vh * 0.052)
       const upcoming = upcomingCues(cueChartRef.current, v.currentTime, HIT_LEAD_S)
       const feedback = hitFeedbackRef.current
-      if (
-        feedback
-        && v.currentTime >= feedback.target.time
-        && v.currentTime - feedback.target.time <= 0.45
-        && !upcoming.includes(feedback.target)
-      ) upcoming.push(feedback.target)
       const points = upcoming.map((target) => ({
         target,
         x: (mirrorRef.current ? 1 - target.x : target.x) * vw,
@@ -633,9 +632,9 @@ export default function VideoPanel({
           reduceMotionRef.current,
         )
         drawCueGlyph(hitCtx, target, x, y, markerRadius, v.currentTime)
-        if (feedback?.target === target && remaining <= 0 && remaining >= -0.45) {
-          drawArcadeHitLabel(hitCtx, x, y, markerRadius, feedback.grade)
-        }
+      }
+      if (feedback && v.currentTime >= feedback.time && v.currentTime - feedback.time <= 0.45) {
+        drawArcadeHitLabel(hitCtx, vw / 2, vh * 0.8, markerRadius, feedback.grade)
       }
     }
 
@@ -886,7 +885,12 @@ export default function VideoPanel({
           onTimeUpdate={onTimeUpdate}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
-          onEnded={onGameEnd}
+          onEnded={() => {
+            if (gamePhase !== 'playing' || !onGameEnd) return
+            if (gameEndTimerRef.current !== null) clearTimeout(gameEndTimerRef.current)
+            // The camera keeps sampling during the Easy timing grace period.
+            gameEndTimerRef.current = setTimeout(onGameEnd, 900)
+          }}
         />
         <canvas
           ref={canvasRef}

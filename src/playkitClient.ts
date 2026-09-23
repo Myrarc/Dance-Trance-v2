@@ -69,7 +69,7 @@ export interface PracticeSave {
  * Read-modify-write against the single save blob. Everything that syncs goes
  * through here so two features can never race each other's version.
  */
-async function updateSave(mutate: (save: PracticeSave) => PracticeSave): Promise<void> {
+async function updateSave(mutate: (save: PracticeSave) => PracticeSave, reportFailure = false): Promise<void> {
   if (!playkit || !playkit.isSignedIn) return
   try {
     const existing = await playkit.loadProgress<PracticeSave>()
@@ -79,7 +79,8 @@ async function updateSave(mutate: (save: PracticeSave) => PracticeSave): Promise
       library: current.library,
       arcadeRecords: current.arcadeRecords,
     }), existing?.version)
-  } catch {
+  } catch (error) {
+    if (reportFailure) throw error
     // Practice data is a bonus; never let a failed sync surface mid-session.
   }
 }
@@ -137,15 +138,14 @@ export async function loadLibraryIndex(): Promise<LibraryMeta[]> {
 }
 
 export async function syncArcadeRecords(records: CloudArcadeRecord[]): Promise<void> {
-  if (!records.length) return
   await updateSave((save) => ({
     ...save,
     arcadeRecords: mergeCloudRecordSets(save.arcadeRecords ?? [], records),
-  }))
+  }), true)
 }
 
 export async function loadArcadeRecords(): Promise<CloudArcadeRecord[]> {
-  return (await readSave())?.arcadeRecords ?? []
+  return ((await readSave())?.arcadeRecords ?? []).filter((record) => record.scoringVersion === 2)
 }
 
 export interface VideoStats {
