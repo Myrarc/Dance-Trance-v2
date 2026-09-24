@@ -24,7 +24,7 @@ import { MENU_THEMES, loadGameSettings, saveGameSettings, type GameSettings } fr
 import { startMenuTheme } from './lib/menuMusic'
 import { sampleBeat } from './lib/attractBeat'
 import { beatPulseAt } from './lib/menuPulse'
-import { loadBeatMap, manualGlowAt, songBeatKey, themeBeatKey, type BeatMap } from './lib/beatMaps'
+import { beatGlowAt, loadBeatMap, songBeatKey, themeBeatKey, type BeatMap } from './lib/beatMaps'
 import { spawnEdgeStars } from './lib/edgeStars'
 import { playSfx } from './lib/sfx'
 import { accuracy, recordEligible, type GamePhase, type HitGrade, type PlayerRound } from './pose/gameplay'
@@ -106,7 +106,7 @@ export default function App() {
   const [filePickerNotice, setFilePickerNotice] = useState(false)
   const [cameraRunning, setCameraRunning] = useState(false)
   const [resultPhotoRound, setResultPhotoRound] = useState(0)
-  const targetRef = useRef<TargetPose>({ feature: null, history: [], time: 0, gameRun: 0, facing: null, sectionId: null })
+  const targetRef = useRef<TargetPose>({ feature: null, history: [], time: 0, gameRun: 0, sectionId: null })
   const capturePhotoFrameRef = useRef<(() => HTMLCanvasElement | null) | null>(null)
   const onPhotoFrameReady = useCallback((capture: (() => HTMLCanvasElement | null) | null) => {
     capturePhotoFrameRef.current = capture
@@ -660,7 +660,7 @@ export default function App() {
           previousFrequencies.set(frequencies)
           hasPrevious = true
         }
-        const timed = manual ? manualGlowAt(manual.marks, audio.currentTime) : null
+        const timed = manual ? beatGlowAt(manual, audio.currentTime) : null
         if (timed?.mark.kind === 'burst' && previousTime < timed.mark.time &&
           audio.currentTime - previousTime < .5 && !audio.seeking && edgeStarsRef.current) {
           spawnEdgeStars(edgeStarsRef.current)
@@ -1057,16 +1057,20 @@ export default function App() {
         <p>{L('Your dance. Your game. One or two players.', '你的舞蹈，你的游戏。一人或两人同玩。')}</p>
       </main>}
       {navigation.screen === 'tracking' && <main className="tracking-screen">
-        <h1>{L('Get in the picture.', '进入画面。')}</h1>
-        <p>{L('The camera finds one or two players. Each player raises their right hand until confirmed. Lower your hands before navigating.', '摄像头会识别一位或两位玩家。每个人举起右手直到确认，放下手后再操作菜单。')}</p>
+        <h1>{!cameraRunning ? L('Turn on your camera.', '打开摄像头。') : lobby.players === 0 ? L('Step into the frame.', '站进画面。') : L('Raise your right hand.', '举起右手。')}</h1>
+        <p>{!cameraRunning ? L('Use the button in the camera view to begin.', '点击摄像头画面中的按钮开始。') : lobby.players === 0 ? L('Step back until your head and both hands fit in the picture.', '向后站，确保头部和双手都在画面内。') : L('Keep your left hand down. Hold your right hand above your head until confirmed.', '放下左手，举起右手高过头顶，保持姿势直到确认。')}</p>
+        <div className="tracking-pose-card">
+          <img src={`${import.meta.env.BASE_URL}menu/nav-select.webp`} alt="" aria-hidden="true" draggable={false} />
+          <strong>{L('RIGHT HAND UP', '举起右手')}</strong>
+        </div>
         <div className="tracking-setup">
           <div className="tracking-auto-players" aria-live="polite">
             <span>{L('Automatic player setup', '自动识别玩家')}</span>
-            <strong>{!cameraRunning ? L('Turn on the camera', '打开摄像头') : lobby.players === 0 ? L('Looking for players', '正在寻找玩家') : L(`${registrationPlayers} player${registrationPlayers === 1 ? '' : 's'} in setup`, `${registrationPlayers} 位玩家准备中`)}</strong>
-            <small>{L('Each player confirms separately.', '每位玩家分别确认。')}</small>
+            <strong>{!cameraRunning ? L('Camera is off', '摄像头未开启') : lobby.players === 0 ? L('Looking for players', '正在寻找玩家') : L(`${lobby.players} player${lobby.players === 1 ? '' : 's'} in frame`, `${lobby.players} 位玩家在画面中`)}</strong>
+            <small>{L('Each player confirms with their right hand.', '每位玩家举起右手分别确认。')}</small>
           </div>
         </div>
-        {!diagnosticRequested && <button className="btn primary tracking-diagnostic" onClick={() => setDiagnosticRequested(true)}>{L('Run camera diagnostics', '运行摄像头检测')}</button>}
+        {!diagnosticRequested && <button className="btn subtle tracking-diagnostic" onClick={() => setDiagnosticRequested(true)}>{L('Run camera diagnostics', '运行摄像头检测')}</button>}
         {diagnosticRequested && !lobby.ready && <p className="tracking-diagnostic-wait">{L('Confirm each player to begin the test.', '确认每位玩家后开始检测。')}</p>}
         <button className="btn subtle tracking-back" onClick={() => { setDiagnosticRequested(false); dispatch({ type: 'openHome' }) }}>{L('Back to menu', '返回菜单')}</button>
       </main>}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CueLandmark } from '../pose/gameplay'
 import { accuracy } from '../pose/gameplay'
-import { DIAGNOSTIC_DURATION, DIAGNOSTIC_STEPS, diagnosticCoverage, scoreDiagnostic, type DiagnosticResult } from '../pose/cameraDiagnostic'
+import { DIAGNOSTIC_DURATION, DIAGNOSTIC_STEPS, diagnosticCoverage, diagnosticTargetPoints, scoreDiagnostic, type DiagnosticResult } from '../pose/cameraDiagnostic'
 import { liveMotionFrame, type MotionFrame } from '../pose/motionScore'
 import type { PoseFeature } from '../pose/angles'
 import { framingProblems } from '../pose/checkup'
@@ -21,24 +21,6 @@ interface Props {
 }
 
 const COUNTDOWN_MS = 3000
-
-function targetPoint(reading: DiagnosticReading | null, step: string): { x: number; y: number }[] {
-  const landmarks = reading?.landmarks
-  if (!landmarks) return []
-  const left = landmarks[11]
-  const right = landmarks[12]
-  const hip = landmarks[24]
-  const ankle = landmarks[28]
-  if (!left || !right || !hip) return []
-  const width = Math.max(0.1, Math.abs(left.x - right.x))
-  const height = Math.max(0.15, hip.y - right.y)
-  if (step === 'right-arm') return [{ x: right.x, y: right.y - height * 0.95 }]
-  if (step === 'both-arms') return [
-    { x: left.x - width * 0.95, y: left.y },
-    { x: right.x + width * 0.95, y: right.y },
-  ]
-  return ankle ? [{ x: hip.x + width * 0.95, y: ankle.y }] : []
-}
 
 function markerPosition(point: { x: number; y: number }, capture: Props['capture'], stage: HTMLElement | null) {
   if (!stage || !capture.width || !capture.height) return { left: `${(1 - point.x) * 100}%`, top: `${point.y * 100}%` }
@@ -123,10 +105,10 @@ export default function CameraDiagnostic({ read, playerCount, capture, onClose }
     <div className="diagnostic-instruction">
       <span>{elapsed < 0 ? `Starting in ${Math.ceil(-elapsed)}` : active ? 'Follow the marker' : 'Get ready'}</span>
       <strong>{elapsed < 0 ? 'Stand ready, arms down' : active?.label ?? next?.label ?? 'Finish strong'}</strong>
-      <small>{Math.max(0, Math.min(100, Math.round(elapsed / DIAGNOSTIC_DURATION * 100)))}% · Move with the circles, then return to rest</small>
+      <small>{Math.max(0, Math.min(100, Math.round(elapsed / DIAGNOSTIC_DURATION * 100)))}% · {active?.id === 'side-step' ? 'Keep your body still; tap your right foot to the circle' : 'Move with the circles, then return to rest'}</small>
     </div>
     {active && readings.slice(0, playerCount).flatMap((reading, player) =>
-      targetPoint(reading, active.id).map((point, index) => (
+      diagnosticTargetPoints(reading?.landmarks, active.id).map((point, index) => (
         <div className="diagnostic-marker" key={`${player}-${index}`} style={markerPosition(point, capture, stageRef.current)}>
           <span>{playerCount === 2 ? `P${player + 1}` : '●'}</span>
         </div>

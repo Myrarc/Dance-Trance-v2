@@ -19,7 +19,6 @@ import {
   type CropBox,
 } from '../pose/skeleton'
 import { computeAngles, dimmedSegments, type Focus, type Landmark3, type PoseFeature, type TargetFrame } from '../pose/angles'
-import { facing, type Facing } from '../pose/skeleton'
 import { LandmarkSmoother } from '../pose/filter'
 import { sampleTrack, type PoseTrack } from '../pose/track'
 import {
@@ -51,8 +50,6 @@ export interface TargetPose {
   time: number
   /** Run whose reference video has finished rewinding and started playback. */
   gameRun: number
-  /** Which way the reference dancer is facing, or null when side-on. */
-  facing: Facing | null
   /** Typed gameplay chart generated from the analysed track. */
   cueChart?: CueEvent[]
 }
@@ -396,7 +393,6 @@ export default function VideoPanel({
     setLocked(false)
     targetRef.current.feature = null
     targetRef.current.history = []
-    targetRef.current.facing = null
     targetRef.current.gameRun = 0
   }, [src, targetRef])
 
@@ -550,8 +546,6 @@ export default function VideoPanel({
         target.feature = feature
         target.time = v.currentTime
         target.sectionId = activeSection(sectionsRef.current, v.currentTime)?.id ?? null
-        // Side-on frames report nothing; hold the last confident reading.
-        target.facing = facing(selected) ?? target.facing
         target.cueChart = cueChartRef.current
 
         // A seek or a loop makes earlier frames meaningless as "what they were

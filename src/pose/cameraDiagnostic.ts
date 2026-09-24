@@ -1,13 +1,30 @@
-import { advanceMotionRound, newMotionRound, trackingCoverage, type MotionRound } from './gameplay.ts'
+import { advanceMotionRound, newMotionRound, trackingCoverage, type CueLandmark, type MotionRound } from './gameplay.ts'
 import { evaluateMotionInterval, type MotionFrame, type MotionInterval } from './motionScore.ts'
 import type { PoseFeature, Vec } from './angles.ts'
 
 export const DIAGNOSTIC_STEPS = [
   { id: 'right-arm', label: 'Raise your right arm', start: 1.5, end: 2.1, keys: ['rUpperArm', 'rForearm'] },
   { id: 'both-arms', label: 'Stretch both arms out', start: 3.6, end: 4.2, keys: ['lUpperArm', 'lForearm', 'rUpperArm', 'rForearm'] },
-  { id: 'side-step', label: 'Step to your right', start: 5.7, end: 6.3, keys: ['rThigh', 'rShin'] },
+  { id: 'side-step', label: 'Tap your right foot out', start: 5.7, end: 6.3, keys: ['rThigh', 'rShin'] },
 ] as const
 export const DIAGNOSTIC_DURATION = 7.2
+
+export function diagnosticTargetPoints(landmarks: CueLandmark[] | null | undefined, step: string): { x: number; y: number }[] {
+  if (!landmarks) return []
+  const left = landmarks[11]
+  const right = landmarks[12]
+  const hip = landmarks[24]
+  const ankle = landmarks[28]
+  if (!left || !right || !hip) return []
+  const spread = (left.x >= right.x ? 1 : -1) * Math.max(0.1, Math.abs(left.x - right.x))
+  const height = Math.max(0.15, hip.y - right.y)
+  if (step === 'right-arm') return [{ x: right.x, y: right.y - height * 0.95 }]
+  if (step === 'both-arms') return [
+    { x: left.x + spread * 0.95, y: left.y },
+    { x: right.x - spread * 0.95, y: right.y },
+  ]
+  return ankle ? [{ x: hip.x - spread * 1.25, y: ankle.y }] : []
+}
 
 const normalized = (x: number, y: number): Vec => {
   const length = Math.hypot(x, y)

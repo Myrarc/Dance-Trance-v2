@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import type { NormalizedLandmark, PoseLandmarker } from '@mediapipe/tasks-vision'
 import { createPoseLandmarker } from '../pose/landmarker'
 import { drawSkeleton, LEVEL_COLORS, LM } from '../pose/skeleton'
-import { computeAngles, compareToHistory, levelConnectionColors, dimmedSegments, HEAD, type Focus, type LagState } from '../pose/angles'
+import { computeAngles, compareToHistory, compareToHistoryEither, levelConnectionColors, dimmedSegments, HEAD, type Focus, type LagState } from '../pose/angles'
 import { LandmarkSmoother } from '../pose/filter'
 import { framingProblems } from '../pose/checkup'
 import { FrameMeter, frameTimestampMs, type FrameMetrics } from '../pose/frameMeter'
@@ -40,7 +40,7 @@ import { advanceScoringClock, buildMotionIntervals, evaluateMotionInterval, live
 import type { Difficulty } from '../pose/hitTargets'
 import type { PoseTrack } from '../pose/track'
 
-/** Whether to mirror the comparison; 'auto' follows the reference's facing. */
+/** Whether to mirror the comparison; 'auto' accepts the closer alignment. */
 type MirrorMode = 'auto' | 'mirror' | 'direct'
 const LIVE_INFERENCE_INTERVAL_MS = 33
 const LIVE_INPUT_WIDTH = 960
@@ -246,6 +246,7 @@ export default function WebcamPanel({
   const lagRef = useRef<number | null>(null)
   // The lag estimate persists between frames so it can settle.
   const lagStatesRef = useRef<LagState[]>([{ lag: 0 }, { lag: 0 }])
+  const autoMirroredRef = useRef([false, false])
   const movementHistoryRef = useRef<{ t: number; value: CueFrame }[][]>([[], []])
   const motionHistoryRef = useRef<MotionFrame[][]>([[], []])
   const playbackEndedAtRef = useRef(0)
@@ -698,21 +699,10 @@ export default function WebcamPanel({
       let frameLag: number | null = null
       if (pose && world && lobbyReadyRef.current) {
         const user = computeAngles(world)
-        // You always face your own camera, so mirroring is only right when the
-        // reference dancer faces theirs.
-        const mirrored =
-          mirrorModeRef.current === 'auto'
-            ? target.facing !== 'back'
-            : mirrorModeRef.current === 'mirror'
-        const cmp = compareToHistory(
-          user,
-          target.history,
-          target.time,
-          mirrored,
-          lagStatesRef.current[0],
-          focusRef.current,
-          trackHeadRef.current,
-        )
+        const autoComparison = mirrorModeRef.current === 'auto'
+          ? compareToHistoryEither(user, target.history, target.time, lagStatesRef.current[0], focusRef.current, trackHeadRef.current) : null
+        const cmp = autoComparison ?? compareToHistory(user, target.history, target.time, mirrorModeRef.current === 'mirror', lagStatesRef.current[0], focusRef.current, trackHeadRef.current)
+        if (autoComparison) autoMirroredRef.current[0] = autoComparison.mirrored
         drawSkeleton(ctx, pose, cv.width, cv.height, {
           color: LEVEL_COLORS.na,
           lineWidth: 7,
@@ -727,19 +717,10 @@ export default function WebcamPanel({
       }
       if (lobbyReadyRef.current && poses[1] && players[1]?.world) {
         const second = computeAngles(players[1].world)
-        const mirrored =
-          mirrorModeRef.current === 'auto'
-            ? target.facing !== 'back'
-            : mirrorModeRef.current === 'mirror'
-        const cmp = compareToHistory(
-          second,
-          target.history,
-          target.time,
-          mirrored,
-          lagStatesRef.current[1],
-          focusRef.current,
-          trackHeadRef.current,
-        )
+        const autoComparison = mirrorModeRef.current === 'auto'
+          ? compareToHistoryEither(second, target.history, target.time, lagStatesRef.current[1], focusRef.current, trackHeadRef.current) : null
+        const cmp = autoComparison ?? compareToHistory(second, target.history, target.time, mirrorModeRef.current === 'mirror', lagStatesRef.current[1], focusRef.current, trackHeadRef.current)
+        if (autoComparison) autoMirroredRef.current[1] = autoComparison.mirrored
         playerFrames[1] = { feature: second, landmarks: poses[1] }
         drawSkeleton(ctx, poses[1], cv.width, cv.height, {
           color: LEVEL_COLORS.na,
@@ -770,7 +751,7 @@ export default function WebcamPanel({
           while (history.length > 1 && history[0].t < cameraTime - 2.2) history.shift()
           const motionHistory = motionHistoryRef.current[index]
           motionHistory.push(liveMotionFrame(playbackTime, frame.feature, frame.landmarks))
-          while (motionHistory.length > 1 && motionHistory[0].t < playbackTime - 2.5) motionHistory.shift()
+          while (motionHistory.length > 1 && motionHistory[0].t < playbackTime - 4) motionHistory.shift()
         }
         let changed = false
         let hitGrade: HitGrade | null = null
@@ -779,15 +760,13 @@ export default function WebcamPanel({
         const scoreDebug: ScoreDebug[] = []
         for (let index = 0; index < registeredPlayerCount; index++) {
           let before = roundsRef.current[index]
-          const mirrored = mirrorModeRef.current === 'auto'
-            ? target.facing !== 'back'
-            : mirrorModeRef.current === 'mirror'
           const { frames, intervals } = motionChartRef.current
           while (before.nextTarget < intervals.length) {
             const interval = intervals[before.nextTarget]
             if (playbackTime < interval.end + motionLagLimit(difficultyRef.current) + 0.02) break
             const reading = evaluateMotionInterval(
-              interval, frames, motionHistoryRef.current[index], difficultyRef.current, before.lag, mirrored,
+              interval, frames, motionHistoryRef.current[index], difficultyRef.current, before.lag,
+              mirrorModeRef.current === 'auto' ? 'auto' : mirrorModeRef.current === 'mirror',
               before.judged > 0,
             )
             const after = advanceMotionRound(before, reading, interval.kind)
@@ -876,9 +855,7 @@ export default function WebcamPanel({
         setLag(lagRef.current)
         setFraming(latestRef.current[0]?.framing ?? [])
         setMirroredNow(
-          mirrorModeRef.current === 'auto'
-            ? targetRef.current.facing !== 'back'
-            : mirrorModeRef.current === 'mirror',
+          mirrorModeRef.current === 'auto' ? autoMirroredRef.current[0] : mirrorModeRef.current === 'mirror',
         )
         if (gamePhase === 'lobby') setPlayerSetup(setup)
         setTrackingLost(registrationPlayersRef.current === 2 && !!playerLockRef.current?.slots.some((slot) => frameNow - slot.lastSeenAt > 750))
@@ -968,7 +945,7 @@ export default function WebcamPanel({
                   : confirmed
                     ? L('Confirmed', '已确认')
                   : !playerSetup.rightHandRaised[index]
-                    ? T('Right hand up · left hand down')
+                    ? registrationScreen ? L('RAISE YOUR RIGHT HAND', '举起右手') : T('Right hand up · left hand down')
                     : `${Math.round(progress * 100)}%`
               return (
                 <div key={index} className={`player-zone ${confirmed && playerSetup.inZone[index] ? 'ready' : ''}`}>
@@ -1055,8 +1032,7 @@ export default function WebcamPanel({
               {label}
             </button>
           ))}
-          {/* Auto is right almost always, so this is one button that reports
-              what it decided rather than three that ask you to decide. */}
+          {/* Auto compares both valid orientations and reports the closer one. */}
           {!requireCalibration && <button
             className={`btn subtle ${mirrorMode === 'auto' ? '' : 'active'}`}
             onClick={() =>
@@ -1064,7 +1040,7 @@ export default function WebcamPanel({
                 mirrorMode === 'auto' ? 'mirror' : mirrorMode === 'mirror' ? 'direct' : 'auto',
               )
             }
-            title={T('Choose whether your moves mirror the dancer. Auto follows their direction.')}
+            title={T('Choose whether your moves mirror the dancer. Auto matches either side.')}
           >
             {mirrorMode === 'auto'
               ? `${T('Sides: auto')} · ${mirroredNow ? T('mirrored') : T('same side')}`

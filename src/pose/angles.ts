@@ -345,6 +345,23 @@ export function compareToHistory(
   return { ...compareAngles(user, chosen.feature, mirrored, focus, trackHead), lag }
 }
 
+export function compareToHistoryEither(
+  user: PoseFeature,
+  history: TargetFrame[],
+  now: number,
+  state: LagState,
+  focus: Focus = 'full',
+  trackHead = true,
+): TimedComparison & { mirrored: boolean } {
+  const directState = { lag: state.lag }
+  const mirrorState = { lag: state.lag }
+  const direct = compareToHistory(user, history, now, false, directState, focus, trackHead)
+  const mirror = compareToHistory(user, history, now, true, mirrorState, focus, trackHead)
+  const mirrored = (mirror.score ?? -1) > (direct.score ?? -1)
+  state.lag = mirrored ? mirrorState.lag : directState.lag
+  return { ...(mirrored ? mirror : direct), mirrored }
+}
+
 /** Connection keys for limbs that are not being practised. */
 export function dimmedSegments(focus: Focus): Set<string> {
   const out = new Set<string>()

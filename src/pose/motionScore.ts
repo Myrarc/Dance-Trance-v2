@@ -31,12 +31,13 @@ export function advanceScoringClock(mediaTime: number, ended: boolean, nowMs: nu
 }
 
 const SETTINGS: Record<Difficulty, { lag: number; sigma: number; penalty: number }> = {
-  easy: { lag: 0.65, sigma: 35, penalty: 0.25 },
-  normal: { lag: 0.4, sigma: 27, penalty: 0.5 },
-  hard: { lag: 0.25, sigma: 20, penalty: 0.75 },
+  easy: { lag: 1.5, sigma: 35, penalty: 0.25 },
+  normal: { lag: 1.1, sigma: 27, penalty: 0.5 },
+  hard: { lag: 0.8, sigma: 20, penalty: 0.75 },
 }
 const STEP_S = 0.5
-const GAP_GRACE_S = 0.2
+const GAP_GRACE_S = 0.3
+const LAG_CHANGE_S = 0.6
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value))
 const norm = (value: Vec) => Math.hypot(value.x, value.y, value.z)
 const dot = (a: Vec, b: Vec) => a.x * b.x + a.y * b.y + a.z * b.z
@@ -185,11 +186,18 @@ export function evaluateMotionInterval(
   player: MotionFrame[],
   difficulty: Difficulty,
   previousLag = 0,
-  mirrored = false,
+  mirrored: boolean | 'auto' = false,
   lagLocked = false,
 ): MotionEvidence {
+  if (mirrored === 'auto') {
+    const direct = evaluateMotionInterval(interval, reference, player, difficulty, previousLag, false, lagLocked)
+    const mirror = evaluateMotionInterval(interval, reference, player, difficulty, previousLag, true, lagLocked)
+    return (mirror.quality ?? -1) > (direct.quality ?? -1) ? mirror : direct
+  }
   const sampleStart = interval.kind === 'move' ? Math.max(0, interval.start - 0.2) : interval.start
-  if (hasLongGap(player, sampleStart, interval.end)) return { quality: null, coverage: 0, lag: previousLag }
+  if (lagLocked && hasLongGap(player, sampleStart + previousLag, interval.end + previousLag)) {
+    return { quality: null, coverage: 0, lag: previousLag }
+  }
   const settings = SETTINGS[difficulty]
   let best: MotionEvidence = { quality: null, coverage: 0, lag: previousLag }
   let bestRank = -Infinity
@@ -197,7 +205,8 @@ export function evaluateMotionInterval(
     interpolate(reference, sampleStart + (interval.end - sampleStart) * index / 4))
   for (let offset = -settings.lag; offset <= settings.lag + 0.001; offset += 0.05) {
     const lag = Math.round(offset * 100) / 100
-    if (lagLocked && Math.abs(lag - previousLag) > 0.15 + 0.001) continue
+    if (lagLocked && Math.abs(lag - previousLag) > LAG_CHANGE_S + 0.001) continue
+    if (hasLongGap(player, sampleStart + lag, interval.end + lag)) continue
     const playerPoints = Array.from({ length: 5 }, (_, index) =>
       interpolate(player, sampleStart + (interval.end - sampleStart) * index / 4 + lag))
     let poseSum = 0

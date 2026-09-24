@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { T, L } from '../i18n'
-import { accuracy, recordEligible, trackingCoverage, type PlayerRound } from '../pose/gameplay'
+import { accuracy, recordEligible, type PlayerRound } from '../pose/gameplay'
 import type { Difficulty } from '../pose/hitTargets'
 import { gradeFromAccuracy, type ArcadeRecord, type Grade } from '../game/records'
 import { MENU_THEMES, type GameSettings } from '../lib/gameSettings'
@@ -50,17 +50,6 @@ export function Brand({ compact = false }: { compact?: boolean }) {
   )
 }
 
-function HomeIcon({ index }: { index: number }) {
-  const icons = [
-    <path key="play" d="M7 3.5v17L21 12z" fill="currentColor" stroke="none" />,
-    <g key="practice"><circle cx="12" cy="4" r="2" /><path d="M12 6v9M12 9 4 6m8 3 8-3m-8 9-5 7m5-7 5 7" /></g>,
-    <g key="library"><rect x="5" y="3" width="14" height="18" rx="1" /><path d="M8 8h8m-8 4h8m-8 4h5" /></g>,
-    <g key="settings"><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /><path d="M12 1v3m0 16v3M1 12h3m16 0h3M4.2 4.2l2.1 2.1m11.4 11.4 2.1 2.1m0-15.6-2.1 2.1M6.3 17.7l-2.1 2.1" /></g>,
-    <g key="camera"><rect x="2" y="5" width="20" height="16" rx="2" /><path d="m8 5 1.5-2h5L16 5" /><circle cx="12" cy="13" r="4" /></g>,
-  ]
-  return <svg className="home-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icons[index]}</svg>
-}
-
 export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, account }: {
   trackingReady: boolean
   selected: number
@@ -72,11 +61,17 @@ export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, 
   const centerRef = useRef<HTMLButtonElement>(null)
   useEffect(() => centerRef.current?.focus({ preventScroll: true }), [selected])
   const options = [
-    { title: T('Play'), body: T('Turn a song into an arcade round.'), tone: 'yellow' },
-    { title: T('Practice Studio'), body: T('Loop, slow down, and focus on the parts that need work.'), tone: 'cyan' },
-    { title: L('Library & photos', '舞蹈库与照片'), body: T('Pick up a prepared song or bring in a new dance video.'), tone: 'yellow' },
-    { title: T('Settings'), body: T('Adjust tracking overlays, sound, language, and motion.'), tone: 'cream' },
-    { title: T('Camera setup'), body: T('Reconnect tracking and register players again.'), tone: 'cyan' },
+    { title: T('Play'), body: T('Turn a song into an arcade round.'), art: 'play' },
+    { title: T('Practice Studio'), body: T('Loop, slow down, and focus on the parts that need work.'), art: 'practice' },
+    { title: L('Library & photos', '舞蹈库与照片'), body: T('Pick up a prepared song or bring in a new dance video.'), art: 'library' },
+    { title: T('Settings'), body: T('Adjust tracking overlays, sound, language, and motion.'), art: 'settings' },
+    { title: T('Camera setup'), body: T('Reconnect tracking and register players again.'), art: 'camera' },
+  ]
+  const guide = [
+    { art: 'previous', action: T('Previous'), pose: L('Left arm out', '伸出左臂') },
+    { art: 'next', action: T('Next'), pose: L('Right arm out', '伸出右臂') },
+    { art: 'select', action: T('Select'), pose: L('Right hand up', '举起右手') },
+    { art: 'back', action: T('Back'), pose: L('Left hand up', '举起左手') },
   ]
 
   return (
@@ -96,6 +91,12 @@ export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, 
           <p>{T(trackingReady ? 'Move through the menu with your arms, then raise your right hand to choose.' : 'Use the buttons or open Camera setup to enable gesture controls.')}</p>
         </div>
       </section>
+      <section className="home-navigation-guide" aria-label={L('How to navigate with poses', '如何用动作导航')}>
+        {guide.map(({ art, action, pose }) => <div className="home-guide-step" key={art}>
+          <img src={`${import.meta.env.BASE_URL}menu/nav-${art}.webp`} alt="" aria-hidden="true" draggable={false} />
+          <span><strong>{action}</strong><small>{pose}</small></span>
+        </div>)}
+      </section>
       <nav key={motion?.turn ?? 0} className={`song-carousel home-carousel${motion ? ` is-moving-${motion.direction}` : ''}`} aria-label={T('Game modes')}>
         {([-1, 0, 1] as const).map((offset) => {
           const index = (selected + offset + options.length) % options.length
@@ -104,14 +105,15 @@ export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, 
           return <button
             key={index}
             ref={offset === 0 ? centerRef : undefined}
-            className={`song-card song-card-${position} home-card home-card-${option.tone}`}
+            className={`song-card song-card-${position} home-card`}
             aria-current={offset === 0 ? 'true' : undefined}
             aria-label={option.title}
             onClick={() => offset === 0 ? onSelect() : onMove(offset === -1 ? 'left' : 'right')}
           >
+            <img className="home-card-art" src={`${import.meta.env.BASE_URL}menu/${option.art}.webp`} alt="" aria-hidden="true" draggable={false} />
             <strong>{option.title}</strong>
             <small>{option.body}</small>
-            <span className="home-card-footer"><HomeIcon index={index} /><i aria-hidden="true">{offset === 0 ? L('SELECT', '选择') : offset === -1 ? '←' : '→'}</i></span>
+            <span className="home-card-footer"><i aria-hidden="true">{offset === 0 ? L('SELECT', '选择') : offset === -1 ? '←' : '→'}</i></span>
           </button>
         })}
       </nav>
@@ -119,7 +121,6 @@ export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, 
         <button className="btn" onClick={() => onMove('left')}>{L('← Previous', '← 上一个')}</button>
         <button className="btn" onClick={() => onMove('right')}>{L('Next →', '下一个 →')}</button>
       </div>
-      <p className="home-navigation-hint">{L('← Previous · Next → · Right hand up or Enter to choose', '← 上一个 · 下一个 → · 举右手或按 Enter 选择')}</p>
     </main>
   )
 }
@@ -206,6 +207,7 @@ export function SettingsScreen({ settings, onChange, onClose, onOpenBeatLab, onO
           <div className="theme-options">
             {[...MENU_THEMES, { id: 'off', label: 'Off' } as const].map((theme) => <button key={theme.id} type="button" className={`btn${settings.menuTheme === theme.id ? ' active' : ''}`} aria-pressed={settings.menuTheme === theme.id} onClick={() => update('menuTheme', theme.id)}>{theme.id === 'off' ? T('Off') : theme.label}</button>)}
           </div>
+          <button type="button" className="btn" onClick={onOpenBeatLab}>{L('Open Beat Lab', '打开节拍编辑器')}</button>
         </fieldset>
         <fieldset className="settings-card language-card">
           <legend>{T('Language')}</legend>
@@ -349,15 +351,19 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
           return (
             <article key={index}>
               {records[index]?.isNewBest && <span className="new-record">{T('New record')}</span>}
-              <div className={`grade-stamp grade-${grade.toLowerCase()}`} aria-label={`${T('Grade')} ${grade}`}>{grade}</div>
               <h3>{T('Player')} {index + 1}</h3>
-              <strong className="result-score"><AnimatedScore value={player.score} reduced={reducedEffects} /></strong>
+              <div className="result-headline">
+                <div className={`grade-stamp grade-${grade.toLowerCase()}`} aria-label={`${T('Grade')} ${grade}`}>{grade}</div>
+                <strong className="result-score"><AnimatedScore value={player.score} reduced={reducedEffects} /></strong>
+              </div>
               <div className="result-breakdown">
-                  <span><b>{resultAccuracy}%</b> {T('accuracy')} · <b>{player.maxCombo}×</b> {T('max combo')}</span>
-                  <small>{L(`${trackingCoverage(player)}% tracking coverage`, `追踪覆盖率 ${trackingCoverage(player)}%`)}</small>
-                  {!recordEligible(player) && <small>{L('Provisional score — not enough tracked movement for a personal best.', '临时成绩：追踪到的动作不足，无法记为个人最佳。')}</small>}
-                <small><b>P</b> {player.perfect} {T('Perfect')} · <b>G</b> {player.good} {T('Good')} · <b>M</b> {player.miss} {T('Miss')}</small>
-                {records[index] && <small>{T('Personal best')}: {records[index].record.bestScore.toLocaleString()}</small>}
+                <div className="result-stat"><span>{T('accuracy')}</span><b>{resultAccuracy}%</b></div>
+                <div className="result-stat"><span>{T('max combo')}</span><b>{player.maxCombo}×</b></div>
+                <div className="result-hit result-hit-perfect"><span>{T('Perfect')}</span><b>{player.perfect}</b></div>
+                <div className="result-hit result-hit-good"><span>{T('Good')}</span><b>{player.good}</b></div>
+                <div className="result-hit result-hit-miss"><span>{T('Miss')}</span><b>{player.miss}</b></div>
+                {!recordEligible(player) && <small>{L('Personal best unavailable — camera could not score enough moves.', '无法记录个人最佳：摄像头未能评分足够多的动作。')}</small>}
+                {records[index] && <small className="result-best">{T('Personal best')}: {records[index].record.bestScore.toLocaleString()}</small>}
               </div>
             </article>
           )
