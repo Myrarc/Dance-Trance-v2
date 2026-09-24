@@ -61,11 +61,11 @@ export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, 
   const centerRef = useRef<HTMLButtonElement>(null)
   useEffect(() => centerRef.current?.focus({ preventScroll: true }), [selected])
   const options = [
-    { title: T('Play'), body: T('Turn a song into an arcade round.'), art: 'play' },
-    { title: T('Practice Studio'), body: T('Loop, slow down, and focus on the parts that need work.'), art: 'practice' },
-    { title: L('Library & photos', '舞蹈库与照片'), body: T('Pick up a prepared song or bring in a new dance video.'), art: 'library' },
-    { title: T('Settings'), body: T('Adjust tracking overlays, sound, language, and motion.'), art: 'settings' },
-    { title: T('Camera setup'), body: T('Reconnect tracking and register players again.'), art: 'camera' },
+    { title: T('Play'), art: 'play' },
+    { title: T('Practice Studio'), art: 'practice' },
+    { title: L('Library & photos', '舞蹈库与照片'), art: 'library' },
+    { title: T('Settings'), art: 'settings' },
+    { title: T('Camera setup'), art: 'camera' },
   ]
   const guide = [
     { art: 'previous', action: T('Previous'), pose: L('Left arm out', '伸出左臂') },
@@ -112,8 +112,6 @@ export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, 
           >
             <img className="home-card-art" src={`${import.meta.env.BASE_URL}menu/${option.art}.webp`} alt="" aria-hidden="true" draggable={false} />
             <strong>{option.title}</strong>
-            <small>{option.body}</small>
-            <span className="home-card-footer"><i aria-hidden="true">{offset === 0 ? L('SELECT', '选择') : offset === -1 ? '←' : '→'}</i></span>
           </button>
         })}
       </nav>
