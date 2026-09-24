@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import type { NormalizedLandmark, PoseLandmarker } from '@mediapipe/tasks-vision'
 import { createPoseLandmarker } from '../pose/landmarker'
 import { drawSkeleton, LEVEL_COLORS, LM } from '../pose/skeleton'
-import { computeAngles, compareToHistory, levelConnectionColors, dimmedSegments, HEAD, type Focus, type LagState, type PoseFeature } from '../pose/angles'
+import { computeAngles, compareToHistory, levelConnectionColors, dimmedSegments, HEAD, type Focus, type LagState } from '../pose/angles'
 import { LandmarkSmoother } from '../pose/filter'
 import { framingProblems } from '../pose/checkup'
 import { FrameMeter, frameTimestampMs, type FrameMetrics } from '../pose/frameMeter'
@@ -13,7 +13,7 @@ import { advanceCalibration, beginCalibration, type CalibrationIssue, type Calib
 import { createPlayerLock, matchPlayerLock, primarySoloCandidate, registrationCandidates, type ColorSignature, type LockReason, type PlayerLock } from '../pose/playerLock'
 import { CameraRequestTimeoutError, requestCameraStream } from '../lib/cameraStream'
 import { playSfx } from '../lib/sfx'
-import Checkup from './Checkup'
+import CameraDiagnostic, { type DiagnosticReading } from './CameraDiagnostic'
 import {
   advanceGestureFromPose,
   advancePauseHold,
@@ -148,6 +148,8 @@ interface Props {
   registrationPlayers?: 1 | 2
   onRegistrationPlayersChange?: (count: 1 | 2) => void
   registrationScreen?: boolean
+  diagnosticRequested?: boolean
+  onDiagnosticsClose?: () => void
   onCalibrationChange?: (state: CalibrationState | null) => void
   gestureContext?: GestureContext | null
   onGestureAction?: (gesture: MenuGesture) => void
@@ -189,6 +191,8 @@ export default function WebcamPanel({
   registrationPlayers = 1,
   onRegistrationPlayersChange,
   registrationScreen = false,
+  diagnosticRequested = false,
+  onDiagnosticsClose,
   onCalibrationChange,
   gestureContext = null,
   onGestureAction,
@@ -264,7 +268,7 @@ export default function WebcamPanel({
   onSoloPresenceRef.current = onSoloPresence
   const soundMutedRef = useRef(soundMuted)
   // Latest reading, so the guided check can sample without its own detector.
-  const latestRef = useRef<{ feature: PoseFeature; framing: string[] } | null>(null)
+  const latestRef = useRef<(DiagnosticReading | null)[]>([])
   const lastUiRef = useRef(0)
   const lastInferenceAtRef = useRef(0)
   const calibrationRef = useRef<CalibrationState | null>(null)
@@ -286,7 +290,6 @@ export default function WebcamPanel({
   const [lag, setLag] = useState<number | null>(null)
   const [problems, setProblems] = useState<string[]>([])
   const [framing, setFraming] = useState<string[]>([])
-  const [checking, setChecking] = useState(false)
   const [capture, setCapture] = useState({ width: 0, height: 0 })
   const [metrics, setMetrics] = useState<FrameMetrics | null>(null)
   const [calibration, setCalibration] = useState<CalibrationState | null>(null)
@@ -301,6 +304,7 @@ export default function WebcamPanel({
     rightHandRaised: [],
   })
   const [lobbyReady, setLobbyReady] = useState(false)
+  const checking = diagnosticRequested && registrationScreen && running && lobbyReady
   const [gestureFeedback, setGestureFeedback] = useState<{ gesture: MenuGesture | null; beeps: number; latched: boolean }>({
     gesture: null,
     beeps: 0,
@@ -339,7 +343,7 @@ export default function WebcamPanel({
     gestureHoldRef.current = { ...EMPTY_GESTURE_HOLD }
     pauseHoldRef.current = null
     setPauseProgress(0)
-    latestRef.current = null
+    latestRef.current = []
     emaRef.current = null
     lagRef.current = null
     setScore(null)
@@ -694,8 +698,6 @@ export default function WebcamPanel({
       let frameLag: number | null = null
       if (pose && world && lobbyReadyRef.current) {
         const user = computeAngles(world)
-        const framingNow = framingProblems(pose, focusRef.current)
-        latestRef.current = { feature: user, framing: framingNow }
         // You always face your own camera, so mirroring is only right when the
         // reference dancer faces theirs.
         const mirrored =
@@ -747,6 +749,12 @@ export default function WebcamPanel({
           dimmed: dimmedSegments(focusRef.current),
         })
       }
+      latestRef.current = playerFrames.map((frame, index) => frame ? {
+        at: frameNow,
+        feature: frame.feature,
+        landmarks: frame.landmarks,
+        framing: index === 0 ? frameProblems : framingProblems(frame.landmarks, focusRef.current),
+      } : null)
 
       if (lobbyReadyRef.current && registrationPlayersRef.current === 1) {
         onSoloPresenceRef.current?.(playerFrames[0] !== null, frameNow)
@@ -866,7 +874,7 @@ export default function WebcamPanel({
         setScore(emaRef.current === null ? null : Math.round(emaRef.current))
         setProblems(frameProblems)
         setLag(lagRef.current)
-        setFraming(latestRef.current?.framing ?? [])
+        setFraming(latestRef.current[0]?.framing ?? [])
         setMirroredNow(
           mirrorModeRef.current === 'auto'
             ? targetRef.current.facing !== 'back'
@@ -993,11 +1001,7 @@ export default function WebcamPanel({
             {T('Tracking lost — return to your area and hold your right hand up to relock.')}
           </div>
         )}
-        {import.meta.env.DEV && running && checking && (
-          <div className="stage-overlay checkup-overlay">
-            <Checkup read={() => latestRef.current} onClose={() => setChecking(false)} />
-          </div>
-        )}
+        {checking && <CameraDiagnostic read={() => latestRef.current} playerCount={registrationPlayers} capture={capture} onClose={() => onDiagnosticsClose?.()} />}
         {running && lobbyReady && !checking && !requireCalibration && (
           <div className="score-badge">
             <span className="score-num">{score ?? '—'}</span>
@@ -1051,11 +1055,6 @@ export default function WebcamPanel({
               {label}
             </button>
           ))}
-          {import.meta.env.DEV && running && !checking && !requireCalibration && (
-            <button className="btn subtle" onClick={() => setChecking(true)} title={T('Try a few moves to check scoring')}>
-              {T('Check accuracy')}
-            </button>
-          )}
           {/* Auto is right almost always, so this is one button that reports
               what it decided rather than three that ask you to decide. */}
           {!requireCalibration && <button

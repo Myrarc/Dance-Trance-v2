@@ -101,6 +101,7 @@ export default function App() {
   const [previewSrc, setPreviewSrc] = useState<{ id: string; url: string } | null>(null)
   const [previewPaused, setPreviewPaused] = useState(false)
   const [beatLabOpen, setBeatLabOpen] = useState(false)
+  const [diagnosticRequested, setDiagnosticRequested] = useState(false)
   const [beatMaps, setBeatMaps] = useState<Map<string, BeatMap | null>>(new Map())
   const [filePickerNotice, setFilePickerNotice] = useState(false)
   const [cameraRunning, setCameraRunning] = useState(false)
@@ -272,9 +273,9 @@ export default function App() {
   }, [currentId, library])
 
   useEffect(() => {
-    if (navigation.screen === 'tracking' && lobby.ready && !wasLobbyReadyRef.current) dispatch({ type: 'openHome' })
+    if (navigation.screen === 'tracking' && lobby.ready && !wasLobbyReadyRef.current && !diagnosticRequested) dispatch({ type: 'openHome' })
     wasLobbyReadyRef.current = lobby.ready
-  }, [navigation.screen, lobby.ready])
+  }, [navigation.screen, lobby.ready, diagnosticRequested])
 
   const previewEntry = library.find((entry) => entry.id === gestureSelectedId) ?? library[0]
   const themeMapKey = settings.menuTheme === 'off' ? null : themeBeatKey(settings.menuTheme)
@@ -1065,7 +1066,9 @@ export default function App() {
             <small>{L('Each player confirms separately.', '每位玩家分别确认。')}</small>
           </div>
         </div>
-        <button className="btn subtle tracking-back" onClick={() => dispatch({ type: 'openHome' })}>{L('Back to menu', '返回菜单')}</button>
+        {!diagnosticRequested && <button className="btn primary tracking-diagnostic" onClick={() => setDiagnosticRequested(true)}>{L('Run camera diagnostics', '运行摄像头检测')}</button>}
+        {diagnosticRequested && !lobby.ready && <p className="tracking-diagnostic-wait">{L('Confirm each player to begin the test.', '确认每位玩家后开始检测。')}</p>}
+        <button className="btn subtle tracking-back" onClick={() => { setDiagnosticRequested(false); dispatch({ type: 'openHome' }) }}>{L('Back to menu', '返回菜单')}</button>
       </main>}
       {activeScreen === 'home' && <HomeScreen trackingReady={lobby.ready} selected={homeSelected} motion={homeMotion} onMove={moveHome} onSelect={selectHome} account={<AccountBar />} />}
       {activeScreen === 'arcade' && renderArcade()}
@@ -1073,11 +1076,11 @@ export default function App() {
       {activeScreen === 'library' && renderLibrary()}
       {recordSyncError && <div className="record-sync-warning" role="alert">{L('Personal bests are saved here, but account sync failed.', '个人最佳成绩已保存在本机，但账号同步失败。')} <button onClick={() => void syncFromAccount()}>{L('Retry', '重试')}</button></div>}
       {navigation.screen !== 'attract' && <Suspense fallback={null}><div className={`camera-dock camera-${navigation.screen === 'tracking' ? 'tracking' : activeScreen === 'arcade' ? arcadePhase : activeScreen}${cameraRunning ? '' : ' camera-off'}`}>
-        <WebcamPanel targetRef={targetRef} playbackRef={gameVideoRef} track={track} videoId={current?.id} videoName={current?.name} onSectionPractice={(deltas) => void recordSectionPractice(deltas)} focus={focus} onFocusChange={setFocus} showSkeletons={settings.showCameraSkeletons} trackHead={settings.trackHead} showPoseDebug={settings.showPoseDebug} onPhotoFrameReady={onPhotoFrameReady} gamePhase={activeScreen === 'arcade' ? gamePhase : 'lobby'} gameRun={gameRun} difficulty={difficulty} onLobbyChange={updateLobby} onGameScores={updateGameScores} onHit={showHit} onScoreDebug={import.meta.env.DEV ? updateScoreDebug : undefined} onSoloPresence={reportSoloPresence} registrationPlayers={registrationPlayers} onRegistrationPlayersChange={setRegistrationPlayers} registrationScreen={navigation.screen === 'tracking'} gestureContext={gestureContext} onGestureAction={handleGestureAction} soundMuted={settings.soundMuted} onRunningChange={setCameraRunning} />
+        <WebcamPanel targetRef={targetRef} playbackRef={gameVideoRef} track={track} videoId={current?.id} videoName={current?.name} onSectionPractice={(deltas) => void recordSectionPractice(deltas)} focus={focus} onFocusChange={setFocus} showSkeletons={settings.showCameraSkeletons} trackHead={settings.trackHead} showPoseDebug={settings.showPoseDebug} onPhotoFrameReady={onPhotoFrameReady} gamePhase={activeScreen === 'arcade' ? gamePhase : 'lobby'} gameRun={gameRun} difficulty={difficulty} onLobbyChange={updateLobby} onGameScores={updateGameScores} onHit={showHit} onScoreDebug={import.meta.env.DEV ? updateScoreDebug : undefined} onSoloPresence={reportSoloPresence} registrationPlayers={registrationPlayers} onRegistrationPlayersChange={setRegistrationPlayers} registrationScreen={navigation.screen === 'tracking'} diagnosticRequested={diagnosticRequested} onDiagnosticsClose={() => { setDiagnosticRequested(false); dispatch({ type: 'openHome' }) }} gestureContext={gestureContext} onGestureAction={handleGestureAction} soundMuted={settings.soundMuted} onRunningChange={setCameraRunning} />
       </div></Suspense>}
       {navigation.screen === 'settings' && (beatLabOpen
         ? <BeatLab library={library} initialTheme={settings.menuTheme} onClose={() => setBeatLabOpen(false)} onMapChange={(key, map) => setBeatMaps((previous) => new Map(previous).set(key, map))} />
-        : <SettingsScreen settings={settings} onChange={updateSettings} onClose={() => dispatch({ type: 'closeSettings' })} onOpenBeatLab={() => setBeatLabOpen(true)} />)}
+        : <SettingsScreen settings={settings} onChange={updateSettings} onClose={() => dispatch({ type: 'closeSettings' })} onOpenBeatLab={() => setBeatLabOpen(true)} onOpenDiagnostics={() => { setDiagnosticRequested(true); dispatch({ type: 'wake' }) }} />)}
     </div>
   )
 }

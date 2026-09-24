@@ -1289,109 +1289,6 @@ footer {
   backdrop-filter: blur(6px);
 }
 
-.checkup-overlay {
-  padding: 16px;
-  overflow-y: auto;
-}
-
-.checkup {
-  width: min(560px, 100%);
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-items: center;
-}
-
-.checkup h3 {
-  /* Read at arm's length while stepping into a pose, not leaning at a laptop. */
-  font-size: 30px;
-  line-height: 1.3;
-}
-
-.checkup-step {
-  font-size: 15px;
-  color: var(--muted);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-
-.checkup-bar {
-  width: 260px;
-  height: 7px;
-  border-radius: 2px;
-  background: var(--panel-soft);
-  overflow: hidden;
-  position: relative;
-}
-
-.checkup-bar.running::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--accent);
-  transform-origin: left;
-  animation: checkup-fill 3.2s linear forwards;
-}
-
-@keyframes checkup-fill {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
-}
-
-.checkup-results {
-  list-style: none;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  text-align: left;
-}
-
-.checkup-results li {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  font-size: 14px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  background: var(--panel-soft);
-}
-
-.checkup-score {
-  flex: none;
-  width: 44px;
-  font-size: 22px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.checkup-score.good { color: var(--ok); }
-.checkup-score.mid { color: var(--warn); }
-.checkup-score.poor { color: var(--bad); }
-
-.checkup-detail {
-  color: var(--muted);
-  line-height: 1.45;
-}
-
-.checkup-detail b { color: var(--text); }
-
-.checkup-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.checkup-raw {
-  display: none;
-}
-
-/* The instruction is read from across the room, so it outweighs the chrome. */
-.checkup .hint {
-  font-size: 16px;
-}
-
 /* Poster Pop Arcade — flat screen-print styling over the existing game flow. */
 body {
   background-color: var(--bg);
@@ -1521,8 +1418,7 @@ header .sub {
   letter-spacing: .05em;
 }
 
-.result-players article,
-.checkup-results li {
+.result-players article {
   border: 2px solid var(--ink);
   border-radius: 5px;
   background: var(--panel-soft);
@@ -2684,6 +2580,24 @@ input[type='range'] { accent-color: var(--accent); }
 .tracking-auto-players strong { font-size: clamp(18px, 1.5vw, 24px); }
 .tracking-auto-players small { font-size: 14px; font-weight: 800; }
 .tracking-back { align-self: stretch; min-height: 48px; }
+.tracking-diagnostic { align-self: stretch; min-height: 58px; margin-bottom: 12px; }
+.tracking-diagnostic-wait { margin: 0 0 12px; font-weight: 800; }
+
+.diagnostic-hud { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+.diagnostic-instruction { position: absolute; top: 2%; left: 50%; translate: -50% 0; width: min(88%, 580px); display: grid; gap: 2px; padding: 9px 15px; text-align: center; color: var(--ink); background: var(--warn); border: 3px solid var(--ink); border-radius: 8px; box-shadow: 5px 5px 0 var(--ink); }
+.diagnostic-instruction span { font-size: clamp(11px, 1vw, 16px); font-weight: 900; text-transform: uppercase; }
+.diagnostic-instruction strong { font-size: clamp(19px, 2.4vw, 35px); line-height: 1.05; }
+.diagnostic-instruction small { font-size: clamp(10px, .9vw, 14px); font-weight: 800; }
+.diagnostic-marker { position: absolute; width: clamp(62px, 7vw, 112px); aspect-ratio: 1; translate: -50% -50%; display: grid; place-items: center; border: 7px solid var(--cyan); outline: 4px solid white; border-radius: 50%; color: white; background: #2ad5dc55; box-shadow: 0 0 20px 8px #2ad5dcaa, inset 0 0 18px #ffffffaa; animation: diagnostic-pulse .7s ease-in-out infinite alternate; }
+.diagnostic-marker span { font-size: 22px; font-weight: 1000; text-shadow: 2px 2px var(--ink); }
+@keyframes diagnostic-pulse { to { scale: 1.12; box-shadow: 0 0 30px 13px #2ad5dccc, inset 0 0 24px #ffffffdd; } }
+.diagnostic-feedback { position: absolute; left: 50%; bottom: 8%; translate: -50% 0; display: flex; gap: 12px; padding: 6px 16px; color: var(--ink); background: var(--panel); border: 3px solid var(--ink); border-radius: 7px; box-shadow: 4px 4px 0 var(--cyan); font-size: clamp(20px, 2vw, 32px); font-weight: 1000; white-space: nowrap; }
+.diagnostic-stop { position: absolute; right: 10px; bottom: 10px; pointer-events: auto; }
+.diagnostic-results { position: absolute; inset: 3%; z-index: 7; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding: clamp(12px, 2vw, 30px); color: var(--ink); background: var(--panel); border: 4px solid var(--ink); border-radius: 9px; box-shadow: 7px 7px 0 var(--cyan); }
+.diagnostic-results h3 { margin: 0; font-size: clamp(23px, 2.5vw, 38px); }
+.diagnostic-player-result { display: grid; gap: 3px; padding: 8px 12px; background: var(--warn); border: 2px solid var(--ink); border-radius: 7px; font-size: clamp(12px, 1.2vw, 18px); font-weight: 750; }
+.diagnostic-player-result strong { font-size: 1.15em; }
+.diagnostic-results > button { align-self: flex-start; }
 
 .camera-dock {
   position: fixed;

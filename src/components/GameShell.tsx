@@ -161,11 +161,12 @@ function Toggle({ label, detail, checked, onChange }: {
   )
 }
 
-export function SettingsScreen({ settings, onChange, onClose, onOpenBeatLab }: {
+export function SettingsScreen({ settings, onChange, onClose, onOpenBeatLab, onOpenDiagnostics }: {
   settings: GameSettings
   onChange: (next: GameSettings) => void
   onClose: () => void
   onOpenBeatLab?: () => void
+  onOpenDiagnostics?: () => void
 }) {
   const modalRef = useRef<HTMLElement>(null)
   const beatSequenceRef = useRef(0)
@@ -188,6 +189,8 @@ export function SettingsScreen({ settings, onChange, onClose, onOpenBeatLab }: {
       <section className="settings-grid">
         <div className="settings-card">
           <h2>{T('Gameplay')}</h2>
+          <button className="btn primary" onClick={onOpenDiagnostics}>{L('Camera diagnostics', '摄像头检测')}</button>
+          <p>{L('Try three movements and check tracking before you play.', '开始游戏前，试做三个动作并检查追踪效果。')}</p>
           <Toggle label="Show reference skeleton" detail="Display the pose guide over the reference video." checked={settings.showSkeletons} onChange={(value) => update('showSkeletons', value)} />
           <Toggle label="Show camera skeleton" detail="Display your tracked pose over the live camera." checked={settings.showCameraSkeletons} onChange={(value) => update('showCameraSkeletons', value)} />
           <Toggle label="Track head movements" detail="Include head cues and head position in scoring." checked={settings.trackHead} onChange={(value) => update('trackHead', value)} />
