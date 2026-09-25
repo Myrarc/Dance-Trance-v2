@@ -105,10 +105,11 @@ export async function composeResultPhoto(frame: HTMLCanvasElement, snapshot: Pho
   ])
 
   const canvas = document.createElement('canvas')
-  canvas.width = 1600
-  canvas.height = 900
+  canvas.width = 3200
+  canvas.height = 1800
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Photo canvas is unavailable')
+  context.scale(2, 2)
 
   context.fillStyle = PAPER
   context.fillRect(0, 0, 1600, 900)

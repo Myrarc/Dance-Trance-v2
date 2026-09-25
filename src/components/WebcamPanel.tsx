@@ -240,6 +240,7 @@ export default function WebcamPanel({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const inferenceCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const appearanceCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const photoResolutionRef = useRef(false)
   const landmarkerRef = useRef<PoseLandmarker | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const emaRef = useRef<number | null>(null)
@@ -409,6 +410,26 @@ export default function WebcamPanel({
       streamRef.current?.getTracks().forEach((t) => t.stop())
     }
   }, [])
+
+  useEffect(() => {
+    if (!running) {
+      photoResolutionRef.current = false
+      return
+    }
+    const camera = streamRef.current?.getVideoTracks()[0]
+    if (!camera) return
+    const photo = gamePhase === 'results'
+    if (photo === photoResolutionRef.current) return
+    photoResolutionRef.current = photo
+    void camera.applyConstraints({
+      width: { ideal: photo ? 1920 : 1280 },
+      height: { ideal: photo ? 1080 : 720 },
+      frameRate: { ideal: photo ? 30 : 60, max: photo ? 30 : 60 },
+    }).then(() => {
+      const settings = camera.getSettings()
+      setCapture({ width: settings.width ?? 0, height: settings.height ?? 0 })
+    }).catch((error) => console.warn('Camera resolution change failed', error))
+  }, [running, gamePhase])
 
   const start = async () => {
     setStarting(true)
