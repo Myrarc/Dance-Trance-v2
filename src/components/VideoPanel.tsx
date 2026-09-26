@@ -23,14 +23,16 @@ import { LandmarkSmoother } from '../pose/filter'
 import { sampleTrack, type PoseTrack } from '../pose/track'
 import {
   buildCueChart,
-  nearestVisibleCue,
+  nearestScoredCue,
   upcomingCues,
   type CueEvent,
   type Difficulty,
 } from '../pose/hitTargets'
 import {
   HIT_LEAD_S,
+  HIT_BURST_DURATION_S,
   cueColor,
+  drawArcadeHitBurst,
   drawHitRail,
   drawArcadeHitLabel,
   drawArcadeHitMarker,
@@ -79,7 +81,7 @@ interface Props {
   countdown?: number
   gameRun?: number
   onGameEnd?: () => void
-  hitFeedback?: { id: number; grade: HitGrade; time: number; keys: string[] } | null
+  hitFeedback?: { id: number; grade: HitGrade; time: number; referenceTime: number; keys: string[] } | null
 }
 
 
@@ -599,8 +601,10 @@ export default function VideoPanel({
       const markerRadius = Math.max(28, vh * 0.052)
       const upcoming = upcomingCues(cueChartRef.current, v.currentTime, HIT_LEAD_S)
       const feedback = hitFeedbackRef.current
-      const feedbackCue = feedback && v.currentTime >= feedback.time && v.currentTime - feedback.time <= 0.45
-        ? nearestVisibleCue(cueChartRef.current, feedback.time, HIT_LEAD_S, feedback.keys) : null
+      const feedbackAge = feedback ? v.currentTime - feedback.time : Infinity
+      const feedbackActive = feedback && feedbackAge >= 0 && feedbackAge <= HIT_BURST_DURATION_S
+      const feedbackCue = feedbackActive
+        ? nearestScoredCue(cueChartRef.current, feedback.referenceTime, feedback.time, feedback.keys) : null
       const points = upcoming.map((target) => ({
         target,
         x: (mirrorRef.current ? 1 - target.x : target.x) * vw,
@@ -641,7 +645,10 @@ export default function VideoPanel({
             feedbackCue.time - v.currentTime, reduceMotionRef.current)
           drawCueGlyph(hitCtx, feedbackCue, x, y, markerRadius, v.currentTime)
         }
+        drawArcadeHitBurst(hitCtx, x, y, markerRadius, feedback.grade, feedbackAge, reduceMotionRef.current)
         drawArcadeHitLabel(hitCtx, x, y, markerRadius, feedback.grade)
+      } else if (feedbackActive) {
+        drawArcadeHitLabel(hitCtx, vw / 2, vh * 0.8, markerRadius, feedback.grade)
       }
     }
 

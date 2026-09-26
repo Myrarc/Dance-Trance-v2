@@ -146,7 +146,7 @@ interface Props {
   difficulty?: Difficulty
   onLobbyChange?: (ready: boolean, players: number) => void
   onGameScores?: (players: PlayerRound[]) => void
-  onHit?: (grade: HitGrade, time: number, keys: string[]) => void
+  onHit?: (grade: HitGrade, time: number, referenceTime: number, keys: string[]) => void
   onScoreDebug?: (entries: ScoreDebug[]) => void
   onSoloPresence?: (present: boolean, nowMs: number) => void
   requireCalibration?: boolean
@@ -818,6 +818,7 @@ export default function WebcamPanel({
         let changed = false
         let hitGrade: HitGrade | null = null
         let hitTime = 0
+        let hitReferenceTime = 0
         let hitKeys: string[] = []
         const scoreDebug: ScoreDebug[] = []
         for (let index = 0; index < registeredPlayerCount; index++) {
@@ -849,14 +850,17 @@ export default function WebcamPanel({
             if (after.perfect > before.perfect) {
               hitGrade = 'perfect'
               hitTime = playbackTime
+              hitReferenceTime = interval.kind === 'hold' ? interval.start : interval.end
               hitKeys = interval.keys
             } else if (after.good > before.good && hitGrade !== 'perfect') {
               hitGrade = 'good'
               hitTime = playbackTime
+              hitReferenceTime = interval.kind === 'hold' ? interval.start : interval.end
               hitKeys = interval.keys
             } else if (after.miss > before.miss && hitGrade === null) {
               hitGrade = 'miss'
               hitTime = playbackTime
+              hitReferenceTime = interval.kind === 'hold' ? interval.start : interval.end
               hitKeys = interval.keys
             }
             before = after
@@ -864,7 +868,7 @@ export default function WebcamPanel({
           }
           roundsRef.current[index] = before
         }
-        if (hitGrade) onHit?.(hitGrade, hitTime, hitKeys)
+        if (hitGrade) onHit?.(hitGrade, hitTime, hitReferenceTime, hitKeys)
         if (scoreDebug.length) onScoreDebug?.(scoreDebug)
         if (changed) onGameScores?.(roundsRef.current.slice(0, registeredPlayerCount))
       }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { PoseTrack } from '../src/pose/track.ts'
-import { buildCueChart, nearestVisibleCue, removeOverlappingLimbCues, upcomingCues, type CueEvent } from '../src/pose/hitTargets.ts'
+import { buildCueChart, nearestScoredCue, nearestVisibleCue, removeOverlappingLimbCues, upcomingCues, type CueEvent } from '../src/pose/hitTargets.ts'
 
 const fps = 10
 const frames = 40
@@ -250,4 +250,16 @@ test('phrase feedback anchors to the nearest visible hit circle', () => {
   assert.equal(nearestVisibleCue(cues, 1.59, 0.8, ['lUpperArm']), cues[0])
   assert.equal(nearestVisibleCue(cues, 1.59, 0.8, ['rForearm']), null)
   assert.equal(nearestVisibleCue(cues, 3, 0.8), null)
+})
+
+test('a completed movement cannot put its grade on the next unreached marker', () => {
+  const cues: CueEvent[] = [
+    { kind: 'spot', time: 1.1, poseTime: 1, joint: 'leftHand', x: 0.2, y: 0.3, feature: {}, confidence: 1 },
+    { kind: 'spot', time: 2.4, poseTime: 2.4, joint: 'leftHand', x: 0.8, y: 0.3, feature: {}, confidence: 1 },
+  ]
+  assert.equal(nearestScoredCue(cues, 1, 2, ['lUpperArm']), cues[0])
+  assert.equal(nearestScoredCue(cues, 1.7, 2, ['lUpperArm']), null)
+  assert.equal(nearestScoredCue([
+    { kind: 'spot', time: 2.05, poseTime: 1, joint: 'leftHand', x: 0.5, y: 0.3, feature: {}, confidence: 1 },
+  ], 1, 2, ['lUpperArm']), null)
 })

@@ -11,6 +11,8 @@ export const HIT_COLORS: Record<HitJoint, string> = {
   rightFoot: SIDE_COLORS.right,
 }
 
+export const HIT_BURST_DURATION_S = 0.48
+
 export function cueColor(cue: CueEvent) {
   if (cue.kind === 'clap') return '#ee665f'
   return HIT_COLORS[cue.joint]
@@ -126,6 +128,63 @@ export function drawArcadeHitLabel(
   ctx.strokeText(label, x, y, radius * 1.65)
   ctx.fillStyle = grade === 'perfect' ? '#2cb8ba' : grade === 'good' ? '#e7aa33' : '#f06b68'
   ctx.fillText(label, x, y, radius * 1.65)
+  ctx.restore()
+}
+
+export function drawArcadeHitBurst(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  grade: 'perfect' | 'good' | 'miss',
+  age: number,
+  reduceMotion: boolean,
+) {
+  if (age < 0 || age > HIT_BURST_DURATION_S) return
+  const progress = age / HIT_BURST_DURATION_S
+  const eased = 1 - (1 - progress) ** 3
+  const strength = grade === 'perfect' ? 1 : grade === 'good' ? 0.72 : 0.36
+  const color = grade === 'perfect' ? '#7df4ff' : grade === 'good' ? '#ffd166' : '#f06b68'
+  const rayCount = reduceMotion || grade === 'miss' ? 0 : grade === 'perfect' ? 12 : 8
+
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  ctx.lineCap = 'round'
+  ctx.strokeStyle = color
+  ctx.fillStyle = color
+  ctx.shadowColor = color
+  ctx.shadowBlur = radius * strength
+  ctx.globalAlpha = (1 - progress) * strength
+  ctx.lineWidth = Math.max(3, radius * 0.11 * (1 - progress * 0.55))
+
+  ctx.beginPath()
+  ctx.arc(x, y, radius * (0.72 + eased * 1.65), 0, Math.PI * 2)
+  ctx.stroke()
+
+  if (!reduceMotion) {
+    const pop = 1 + Math.sin(Math.min(1, progress * 2) * Math.PI) * strength * 0.58
+    ctx.beginPath()
+    ctx.arc(x, y, radius * pop, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+
+  for (let index = 0; index < rayCount; index++) {
+    const angle = index / rayCount * Math.PI * 2
+    const inner = radius * (0.82 + eased * 0.72)
+    const outer = inner + radius * (0.34 + strength * 0.42) * (1 - progress)
+    ctx.beginPath()
+    ctx.moveTo(x + Math.cos(angle) * inner, y + Math.sin(angle) * inner)
+    ctx.lineTo(x + Math.cos(angle) * outer, y + Math.sin(angle) * outer)
+    ctx.stroke()
+  }
+
+  const flash = Math.max(0, 1 - progress * 4)
+  if (flash > 0) {
+    ctx.globalAlpha = flash * strength
+    ctx.beginPath()
+    ctx.arc(x, y, radius * (0.25 + flash * 0.42), 0, Math.PI * 2)
+    ctx.fill()
+  }
   ctx.restore()
 }
 
