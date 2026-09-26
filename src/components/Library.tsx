@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { formatDuration, type LibraryEntry } from '../lib/library'
 import { T, L } from '../i18n'
 import type { VideoStats } from '../playkitClient'
@@ -12,7 +12,7 @@ interface Props {
   selectedId?: string | null
   onOpen: (entry: LibraryEntry) => void
   onPreview?: (entry: LibraryEntry) => void
-  onForget: (entry: LibraryEntry) => void
+  onForget: (entry: LibraryEntry) => void | Promise<void>
   onEdit?: (entry: LibraryEntry) => void
   /** Shown when the list is empty, i.e. before anything has been loaded. */
   emptyHint?: string
@@ -28,6 +28,10 @@ function when(ts: number): string {
 }
 
 export default function Library({ entries, stats, records = [], currentId, selectedId, onOpen, onPreview, onForget, onEdit, emptyHint }: Props) {
+  const [removing, setRemoving] = useState<LibraryEntry | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const confirmation = useRef<HTMLDialogElement>(null)
   const bestByVideo = useMemo(() => {
     const best = new Map<string, ArcadeRecord>()
     for (const record of records) {
@@ -42,7 +46,7 @@ export default function Library({ entries, stats, records = [], currentId, selec
   }
 
   return (
-    <ul className="library" aria-label="Song library">
+    <><ul className="library" aria-label="Song library">
       {entries.map((entry) => {
         const s = stats.get(entry.id)
         const best = bestByVideo.get(entry.id)
@@ -80,7 +84,7 @@ export default function Library({ entries, stats, records = [], currentId, selec
             <button
               className="library-forget"
               data-gesture-skip
-              onClick={() => onForget(entry)}
+              onClick={() => { setRemoving(entry); setError(''); confirmation.current?.showModal() }}
               title={T('Remove from library')}
               aria-label={`Remove ${entry.name} from library`}
             >
@@ -90,5 +94,19 @@ export default function Library({ entries, stats, records = [], currentId, selec
         )
       })}
     </ul>
+    <dialog ref={confirmation} className="remove-song-dialog" aria-labelledby="remove-song-title" onCancel={(event) => { if (busy) event.preventDefault() }}>
+      <h2 id="remove-song-title">{L('Remove this song?', '移除此歌曲？')}</h2>
+      <p><strong>{removing?.name}</strong></p>
+      <p>{L('This deletes the local video, analysis, custom markers, draft edits, and lighting for this song. This cannot be undone. Your original file is unchanged.', '这将删除此歌曲的本地视频、分析、自定义标记、编辑草稿和灯光。此操作无法撤销。原始文件不受影响。')}</p>
+      {error && <p role="alert">{error}</p>}
+      <div><button className="btn" autoFocus disabled={busy} onClick={() => confirmation.current?.close()}>{T('Cancel')}</button>
+      <button className="btn" disabled={busy || !removing} onClick={async () => {
+        if (!removing) return
+        setBusy(true)
+        try { await onForget(removing); confirmation.current?.close(); setRemoving(null) }
+        catch (e) { setError(`${L('Could not remove song', '无法移除歌曲')}: ${String(e)}`) }
+        finally { setBusy(false) }
+      }}>{busy ? L('Removing…', '移除中…') : L('Remove song and edits', '移除歌曲和编辑')}</button></div>
+    </dialog></>
   )
 }

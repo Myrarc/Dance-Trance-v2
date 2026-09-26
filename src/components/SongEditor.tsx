@@ -217,7 +217,16 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
     }
     if (busy || confirmClose) return
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); void persist('save'); return }
-    if (event.target instanceof HTMLElement && event.target.closest('input,select,textarea,button')) return
+    if (event.target instanceof HTMLElement && event.target.closest('input,select,textarea,[contenteditable="true"]')) return
+    if (event.target instanceof HTMLElement && event.target.matches('.editor-marker, .editor-light') && ['ArrowUp', 'ArrowDown'].includes(event.key)) {
+      event.preventDefault()
+      const buttons = Array.from(event.target.parentElement!.querySelectorAll<HTMLButtonElement>('button'))
+      const index = buttons.indexOf(event.target as HTMLButtonElement)
+      const next = buttons[(index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]
+      next?.click(); next?.focus()
+      return
+    }
+    if (event.code === 'Space' && event.target instanceof HTMLButtonElement) return
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) redoEdit(); else undoEdit() }
     else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') { event.preventDefault(); duplicate() }
     else if (event.code === 'Space') { event.preventDefault(); toggle() }
@@ -274,11 +283,11 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
         <label>Grid offset<input type="number" min={0} step={.001} value={offset} onChange={(event) => setOffset(Number(event.target.value) || 0)} /></label>
         <label>Snap<select value={snap} onChange={(event) => setSnap(Number(event.target.value))}><option value={0}>Off</option><option value={1}>Beat</option><option value={2}>½ beat</option><option value={4}>¼ beat</option></select></label>
         <button onClick={() => { if (timeline.current) timeline.current.scrollLeft = Math.max(0, time * zoom - timeline.current.clientWidth / 2) }}>Find playhead</button>
-      </div><p>{waveStatus || 'Drag the waveform to scrub. Drag a marker to retime it. Click a marker to inspect it.'}</p>
+      </div><p>{waveStatus || 'Drag the waveform to scrub. Drag a marker to retime it. Select one, then use ↑/↓ to select nearby markers, ←/→ to scrub, or Delete to remove.'}</p>
         <div className="editor-timeline-scroll" ref={timeline}><div className="editor-timeline" style={{ width: Math.max(1, edit.duration * zoom), backgroundSize: `${60 / bpm * zoom}px 100%`, backgroundPositionX: offset * zoom }}>
           <div className="editor-ruler">{Array.from({ length: Math.ceil(edit.duration / 5) }, (_, i) => <span key={i} style={{ left: i * 5 * zoom }}>{timeLabel(i * 5).slice(0, -4)}</span>)}</div>
           <div className="editor-waveform" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); seek(positionOnTimeline(event)) }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) seek(positionOnTimeline(event)) }}><svg viewBox="0 0 800 80" preserveAspectRatio="none" aria-label="Audio waveform">{peaks.map((peak, i) => <line key={i} x1={i} x2={i} y1={40 - peak * 38} y2={40 + peak * 38} />)}</svg></div>
-          <div className="editor-marker-lane" aria-label="Dance markers">{markers.map((item) => <button key={item.id} className={`editor-marker ${item.kind} ${selected === item.id ? 'selected' : ''}`} style={{ left: item.time * zoom, top: (item.kind === 'clap' ? 0 : joints.indexOf(item.joint)) * 25, width: item.kind === 'hold' ? Math.max(20, item.duration * zoom) : 20 }} title={`${item.kind} · ${jointLabel(item.joint)} · ${timeLabel(item.time)}`} onClick={() => { if (suppressMarkerClick.current) { suppressMarkerClick.current = false; return }; setSelected(item.id); seek(item.time) }} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setSelected(item.id); dragging.current = { id: item.id, time: item.time } }} onPointerMove={(event) => {
+          <div className="editor-marker-lane" aria-label="Dance markers"><div className="editor-lane-labels" aria-hidden="true">{joints.map((joint) => <span key={joint}>{jointLabel(joint)}{joint === 'leftHand' ? ' / clap' : ''}</span>)}</div>{markers.map((item, index) => <button key={item.id} tabIndex={selected === item.id || (!markers.some((m) => m.id === selected) && index === 0) ? 0 : -1} aria-label={`${item.kind}, ${jointLabel(item.joint)}, ${timeLabel(item.time)}`} className={`editor-marker ${item.kind} ${selected === item.id ? 'selected' : ''}`} style={{ left: item.time * zoom, top: (item.kind === 'clap' ? 0 : joints.indexOf(item.joint)) * 36, width: item.kind === 'hold' ? Math.max(32, item.duration * zoom) : 32 }} title={`${item.kind} · ${jointLabel(item.joint)} · ${timeLabel(item.time)}`} onClick={() => { if (suppressMarkerClick.current) { suppressMarkerClick.current = false; return }; setSelected(item.id); seek(item.time) }} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setSelected(item.id); dragging.current = { id: item.id, time: item.time } }} onPointerMove={(event) => {
             if (!dragging.current || !event.currentTarget.hasPointerCapture(event.pointerId)) return
             const bounds = event.currentTarget.parentElement!.getBoundingClientRect()
             dragging.current.time = Math.min(edit.duration - (item.kind === 'hold' ? item.duration : 0), Math.max(0, snapped((event.clientX - bounds.left) / zoom)))
@@ -287,7 +296,7 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
             const drag = dragging.current; dragging.current = null
             if (drag && drag.time !== item.time) { suppressMarkerClick.current = true; event.currentTarget.releasePointerCapture(event.pointerId); change({ ...edit, charts: { ...edit.charts, [level]: markers.map((m) => m.id === item.id ? { ...m, time: drag.time } : m) } }); seek(drag.time) }
           }}>{item.kind === 'clap' ? 'C' : item.kind === 'hold' ? '━' : '●'}</button>)}</div>
-          <div className="editor-light-lane" aria-label="Lighting markers">{lights.map((item, i) => <button key={i} className={`editor-light ${item.kind} ${selected === `light:${i}` ? 'selected' : ''}`} style={{ left: item.time * zoom }} title={`${item.kind} at ${timeLabel(item.time)}`} onClick={() => { setSelected(`light:${i}`); seek(item.time) }}>{item.kind === 'burst' ? '★' : '◆'}</button>)}</div>
+          <div className="editor-light-lane" aria-label="Lighting markers">{lights.map((item, i) => <button key={i} tabIndex={selected === `light:${i}` || (!selected.startsWith('light:') && i === 0) ? 0 : -1} aria-label={`${item.kind} light, ${timeLabel(item.time)}`} className={`editor-light ${item.kind} ${selected === `light:${i}` ? 'selected' : ''}`} style={{ left: item.time * zoom }} title={`${item.kind} at ${timeLabel(item.time)}`} onClick={() => { setSelected(`light:${i}`); seek(item.time) }}>{item.kind === 'burst' ? '★' : '◆'}</button>)}</div>
           <div className="editor-trim-shade" style={{ width: edit.start * zoom }} /><div className="editor-trim-shade" style={{ left: edit.end * zoom, right: 0 }} /><div className="editor-playhead" style={{ left: time * zoom }} />
         </div></div>
         <div className="editor-tools"><strong>Lighting:</strong><button onClick={() => addLight('beat')}>Z · Beat</button><button onClick={() => addLight('accent')}>X · Accent</button><button onClick={() => addLight('burst')}>C · Gold</button>

@@ -977,6 +977,7 @@ export default function App() {
         </div> : <p className="library-empty">{T('Your prepared songs will appear here.')}</p>}
         {previewPaused && previewSrc?.id === previewEntry?.id && <button className="btn primary preview-play" onClick={() => { void previewRef.current?.play() }}>{L('Play preview', '播放预览')}</button>}
       </div>
+      {library.length > 1 && <nav className="carousel-controls" aria-label="Song navigation"><button className="btn" onClick={() => moveSong('left')}>{L('Previous song', '上一首')}</button><button className="btn" onClick={() => moveSong('right')}>{L('Next song', '下一首')}</button></nav>}
       <div className="picker-import"><button className="btn primary" data-needs-file onClick={() => openFilePicker(destination)}>{L('+ Add a video', '+ 添加视频')}</button><span className={filePickerNotice ? 'is-notice' : undefined} role={filePickerNotice ? 'status' : undefined}>{filePickerNotice ? L('Use the device to choose a video file.', '请用设备选择视频文件。') : L('Drop a dance video here, or choose one to play.', '将舞蹈视频拖到这里，或选择一个开始游戏。')}</span></div>
     </section>
   )
@@ -1025,6 +1026,7 @@ export default function App() {
           </button>
         })}
       </nav>
+      <nav className="carousel-controls" aria-label="Score focus navigation"><button className="btn" onClick={() => moveScoreFocus('left')}>{L('Previous focus', '上一项')}</button><button className="btn" onClick={() => moveScoreFocus('right')}>{L('Next focus', '下一项')}</button></nav>
       <p className="difficulty-navigation-hint">{L('← Previous · Next → · Right hand up or Enter to continue', '← 上一个 · 下一个 → · 举右手或按 Enter 继续')}</p>
     </main>
   }
@@ -1058,6 +1060,7 @@ export default function App() {
           </button>
         })}
       </nav>
+      <nav className="carousel-controls" aria-label="Difficulty navigation"><button className="btn" onClick={() => moveDifficulty('left')}>{L('Easier', '更简单')}</button><button className="btn" onClick={() => moveDifficulty('right')}>{L('Harder', '更困难')}</button></nav>
       <p className="difficulty-navigation-hint">{L('← Easier · Harder → · Right hand up or Enter to start', '← 更简单 · 更困难 → · 举右手或按 Enter 开始')}</p>
     </main>
   }
@@ -1094,7 +1097,7 @@ export default function App() {
 
   const renderPractice = () => <div className="destination-wrap" data-gesture-surface>{renderHeader('Practice Studio')}{renderPanels('practice')}{src && <footer className="practice-legend"><span className="legend-group"><span className="legend-title">{T('Reference')}</span><span className="legend-item"><i style={{ background: SIDE_COLORS.left }} /> {T("dancer's left")}</span><span className="legend-item"><i style={{ background: SIDE_COLORS.right }} /> {T("dancer's right")}</span></span><span className="legend-group"><span className="legend-title">{T('You')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.ok }} /> {T('matching')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.warn }} /> {T('a bit off')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.bad }} /> {T('way off')}</span></span></footer>}</div>
 
-  const renderLibrary = () => <div className="destination-wrap">{renderHeader('Library')}<main className="destination-screen library-screen" data-gesture-surface><div className="screen-title-row"><h1>{L('Your songs', '你的歌曲')}</h1><button className="btn primary" data-needs-file onClick={() => openFilePicker('arcade')}>{T('Add a dance')}</button></div>{filePickerNotice && <p className="file-picker-notice" role="status">{L('Use the device to choose a video file.', '请用设备选择视频文件。')}</p>}<Library entries={library} stats={stats} records={records} currentId={currentId} selectedId={gestureSelectedId} onPreview={(entry) => setGestureSelectedId(entry.id)} onOpen={(entry) => void openEntry(entry)} onForget={(entry) => void forgetEntry(entry)} onEdit={setEditingSong} emptyHint={T('No songs yet. Add a dance video to build your library.')} /><ResultPhotoGallery /></main></div>
+  const renderLibrary = () => <div className="destination-wrap">{renderHeader('Library')}<main className="destination-screen library-screen" data-gesture-surface><div className="screen-title-row"><h1>{L('Your songs', '你的歌曲')}</h1><button className="btn primary" data-needs-file onClick={() => openFilePicker('arcade')}>{T('Add a dance')}</button></div>{filePickerNotice && <p className="file-picker-notice" role="status">{L('Use the device to choose a video file.', '请用设备选择视频文件。')}</p>}<Library entries={library} stats={stats} records={records} currentId={currentId} selectedId={gestureSelectedId} onPreview={(entry) => setGestureSelectedId(entry.id)} onOpen={(entry) => void openEntry(entry)} onForget={forgetEntry} onEdit={setEditingSong} emptyHint={T('No songs yet. Add a dance video to build your library.')} /><ResultPhotoGallery /></main></div>
 
   useLangTick()
   return (

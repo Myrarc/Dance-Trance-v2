@@ -13,8 +13,8 @@ function useModalFocus(ref: RefObject<HTMLElement | null>) {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const modal = ref.current
     const focusableElements = () => modal
-      ? [...modal.querySelectorAll<HTMLElement>('button, input, [href], [tabindex]:not([tabindex="-1"])')]
-        .filter((element) => !element.hasAttribute('disabled'))
+      ? [...modal.querySelectorAll<HTMLElement>('button, input, summary, [href], [tabindex]:not([tabindex="-1"])')]
+        .filter((element) => !element.hasAttribute('disabled') && element.getClientRects().length > 0)
       : []
     const focusFrame = requestAnimationFrame(() => focusableElements()[0]?.focus())
     const onKeyDown = (event: KeyboardEvent) => {
@@ -187,15 +187,11 @@ export function SettingsScreen({ settings, onChange, onClose, onOpenBeatLab, onO
         <button className="btn" onClick={onClose}>{T('Back')}</button>
       </div>
       <section className="settings-grid">
-        <ScoringRecorder />
         <div className="settings-card">
           <h2>{T('Gameplay')}</h2>
-          <button className="btn primary" onClick={onOpenDiagnostics}>{L('Camera diagnostics', '摄像头检测')}</button>
-          <p>{L('Try three movements and check tracking before you play.', '开始游戏前，试做三个动作并检查追踪效果。')}</p>
           <Toggle label="Show reference skeleton" detail="Display the pose guide over the reference video." checked={settings.showSkeletons} onChange={(value) => update('showSkeletons', value)} />
           <Toggle label="Show camera skeleton" detail="Display your tracked pose over the live camera." checked={settings.showCameraSkeletons} onChange={(value) => update('showCameraSkeletons', value)} />
           <Toggle label="Track head movements" detail="Include head cues and head position in scoring." checked={settings.trackHead} onChange={(value) => update('trackHead', value)} />
-          <Toggle label="Show pose diagnostics" detail="Display tracking confidence and selection details over the game." checked={settings.showPoseDebug} onChange={(value) => update('showPoseDebug', value)} />
         </div>
         <div className="settings-card">
           <h2>{T('Comfort')}</h2>
@@ -214,6 +210,12 @@ export function SettingsScreen({ settings, onChange, onClose, onOpenBeatLab, onO
           <label><input type="radio" name="language" checked={settings.language === 'en'} onChange={() => update('language', 'en')} /> English</label>
           <label><input type="radio" name="language" checked={settings.language === 'zh'} onChange={() => update('language', 'zh')} /> 中文</label>
         </fieldset>
+        <details className="settings-card advanced-settings"><summary>{L('Advanced tools', '高级工具')}</summary>
+          <button className="btn primary" onClick={onOpenDiagnostics}>{L('Camera diagnostics', '摄像头检测')}</button>
+          <p>{L('Try three movements and check tracking before you play.', '开始游戏前，试做三个动作并检查追踪效果。')}</p>
+          <Toggle label="Show pose diagnostics" detail="Display tracking confidence and selection details over the game." checked={settings.showPoseDebug} onChange={(value) => update('showPoseDebug', value)} />
+          <ScoringRecorder />
+        </details>
       </section>
     </main>
   )
