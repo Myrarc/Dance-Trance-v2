@@ -1,4 +1,4 @@
-export type AppScreen = 'attract' | 'tracking' | 'home' | 'arcade' | 'practice' | 'library' | 'settings'
+export type AppScreen = 'attract' | 'tracking' | 'home' | 'arcade' | 'practice' | 'editor' | 'photos' | 'settings'
 export type ArcadePhase = 'setup' | 'countdown' | 'playing' | 'paused' | 'results'
 
 export interface GameState {
@@ -12,7 +12,8 @@ export type GameAction =
   | { type: 'openHome' }
   | { type: 'openArcade' }
   | { type: 'openPractice' }
-  | { type: 'openLibrary' }
+  | { type: 'openEditor' }
+  | { type: 'openPhotos' }
   | { type: 'openSettings' }
   | { type: 'closeSettings' }
   | { type: 'startCountdown' }
@@ -43,8 +44,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return { screen: 'arcade', arcadePhase: 'setup', returnScreen: null }
     case 'openPractice':
       return { ...state, screen: 'practice', returnScreen: null }
-    case 'openLibrary':
-      return { ...state, screen: 'library', returnScreen: null }
+    case 'openEditor':
+      return { ...state, screen: 'editor', returnScreen: null }
+    case 'openPhotos':
+      return { ...state, screen: 'photos', returnScreen: null }
     case 'openSettings':
       return state.screen === 'settings'
         ? state

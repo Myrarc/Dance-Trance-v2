@@ -194,7 +194,7 @@ export default function App() {
     if (navigation.screen === 'home') setHomeSelected(0)
   }, [navigation.screen])
 
-  const go = (type: 'openHome' | 'openArcade' | 'openPractice' | 'openLibrary' | 'openSettings') => {
+  const go = (type: 'openHome' | 'openArcade' | 'openPractice' | 'openEditor' | 'openPhotos' | 'openSettings') => {
     if (type === 'openHome' && activeScreen === 'arcade' && arcadePhase === 'results' && settings.menuTheme !== 'off') {
       const audio = menuMusicRef.current
       if (audio) void startMenuTheme(audio, {
@@ -808,7 +808,7 @@ export default function App() {
   const moveHome = (direction: 'left' | 'right') => {
     playNavigationCue(direction)
     setHomeMotion((motion) => ({ direction, turn: (motion?.turn ?? 0) + 1 }))
-    setHomeSelected((index) => (index + (direction === 'left' ? 4 : 1)) % 5)
+    setHomeSelected((index) => (index + (direction === 'left' ? 5 : 1)) % 6)
   }
   const moveDifficulty = (direction: 'left' | 'right') => {
     playNavigationCue(direction)
@@ -860,8 +860,9 @@ export default function App() {
   const selectHome = () => {
     if (homeSelected === 0) go('openArcade')
     else if (homeSelected === 1) go('openPractice')
-    else if (homeSelected === 2) go('openLibrary')
-    else if (homeSelected === 3) go('openSettings')
+    else if (homeSelected === 2) go('openEditor')
+    else if (homeSelected === 3) go('openPhotos')
+    else if (homeSelected === 4) go('openSettings')
     else dispatch({ type: 'wake' })
   }
   const gestureContext: GestureContext | null = !editingSong && !beatLabOpen && lobby.ready && navigation.screen !== 'tracking' &&
@@ -890,7 +891,7 @@ export default function App() {
       const items = menuItems()
       const first = (pickingSong ? items.find((item) => item.getAttribute('data-track-id') === previewEntry?.id) : null) ??
         items.find((item) => item.hasAttribute('data-gesture-default')) ??
-        (activeScreen === 'arcade' || activeScreen === 'practice' || activeScreen === 'library' ? items.find((item) => item.hasAttribute('data-track-id')) : null) ?? items[0]
+        (activeScreen === 'arcade' || activeScreen === 'practice' || activeScreen === 'editor' ? items.find((item) => item.hasAttribute('data-track-id')) : null) ?? items[0]
       if (first) selectMenuItem(first)
     })
     return () => cancelAnimationFrame(frame)
@@ -950,7 +951,7 @@ export default function App() {
     <header className="app-header">
       <button className="brand-button" onClick={() => go('openHome')} aria-label={T('Home')}><Brand compact /></button>
       <span className="screen-label">{T(title)}</span>
-      <nav><button className="btn subtle" onClick={() => go('openLibrary')}>{L(`Library (${library.length})`, `舞蹈库（${library.length}）`)}</button><button className="btn subtle" onClick={() => go('openSettings')}>{T('Settings')}</button><AccountBar /></nav>
+      <nav><button className="btn subtle" onClick={() => go('openEditor')}>{L('Beatmap Editor', '谱面编辑器')}</button><button className="btn subtle" onClick={() => go('openPhotos')}>{L('Photos', '照片')}</button><button className="btn subtle" onClick={() => go('openSettings')}>{T('Settings')}</button><AccountBar /></nav>
     </header>
   )
 
@@ -1105,7 +1106,8 @@ export default function App() {
 
   const renderPractice = () => <div className="destination-wrap" data-gesture-surface>{renderHeader('Practice Studio')}{renderPanels('practice')}{src && <footer className="practice-legend"><span className="legend-group"><span className="legend-title">{T('Reference')}</span><span className="legend-item"><i style={{ background: SIDE_COLORS.left }} /> {T("dancer's left")}</span><span className="legend-item"><i style={{ background: SIDE_COLORS.right }} /> {T("dancer's right")}</span></span><span className="legend-group"><span className="legend-title">{T('You')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.ok }} /> {T('matching')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.warn }} /> {T('a bit off')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.bad }} /> {T('way off')}</span></span></footer>}</div>
 
-  const renderLibrary = () => <div className="destination-wrap">{renderHeader('Library')}<main className="destination-screen library-screen" data-gesture-surface><div className="screen-title-row"><h1>{L('Your songs', '你的歌曲')}</h1><button className="btn primary" data-needs-file onClick={() => openFilePicker('arcade')}>{T('Add a dance')}</button></div>{filePickerNotice && <p className="file-picker-notice" role="status">{L('Use the device to choose a video file.', '请用设备选择视频文件。')}</p>}<Library entries={library} stats={stats} records={records} currentId={currentId} selectedId={gestureSelectedId} onPreview={(entry) => setGestureSelectedId(entry.id)} onOpen={(entry) => void openEntry(entry)} onForget={forgetEntry} onEdit={setEditingSong} emptyHint={T('No songs yet. Add a dance video to build your library.')} /><ResultPhotoGallery /></main></div>
+  const renderEditor = () => <div className="destination-wrap">{renderHeader(L('Beatmap Editor', '谱面编辑器'))}<main className="destination-screen library-screen editor-screen" data-gesture-surface><div className="screen-title-row"><h1>{L('Beatmap Editor', '谱面编辑器')}</h1><button className="btn primary" data-needs-file onClick={() => openFilePicker('arcade')}>{T('Add a dance')}</button></div><p>{L('Choose a song to trim its video, adjust visual markers, and edit lighting.', '选择歌曲，裁剪视频、调整视觉标记并编辑灯光。')}</p><Library intent="edit" entries={library} stats={stats} records={records} currentId={currentId} selectedId={gestureSelectedId} onPreview={(entry) => setGestureSelectedId(entry.id)} onOpen={setEditingSong} onForget={forgetEntry} emptyHint={L('Add a dance video to start editing.', '添加舞蹈视频以开始编辑。')} /></main></div>
+  const renderPhotos = () => <div className="destination-wrap">{renderHeader(L('Photos', '照片'))}<main className="destination-screen library-screen photos-screen" data-gesture-surface><div className="screen-title-row"><h1>{L('Your photos', '你的照片')}</h1></div><ResultPhotoGallery /></main></div>
 
   useLangTick()
   return (
@@ -1170,7 +1172,8 @@ export default function App() {
       {activeScreen === 'home' && <HomeScreen trackingReady={lobby.ready} selected={homeSelected} motion={homeMotion} onMove={moveHome} onSelect={selectHome} account={<AccountBar />} />}
       {activeScreen === 'arcade' && renderArcade()}
       {activeScreen === 'practice' && renderPractice()}
-      {activeScreen === 'library' && renderLibrary()}
+      {activeScreen === 'editor' && renderEditor()}
+      {activeScreen === 'photos' && renderPhotos()}
       {recordSyncError && <div className="record-sync-warning" role="alert">{L('Personal bests are saved here, but account sync failed.', '个人最佳成绩已保存在本机，但账号同步失败。')} <button onClick={() => void syncFromAccount()}>{L('Retry', '重试')}</button></div>}
       {navigation.screen !== 'attract' && <Suspense fallback={null}><div className={`camera-dock camera-${navigation.screen === 'tracking' ? 'tracking' : activeScreen === 'arcade' ? arcadePhase : activeScreen}${cameraRunning ? '' : ' camera-off'}`}>
         <WebcamPanel targetRef={targetRef} playbackRef={gameVideoRef} track={track} songEdit={activeScreen === 'arcade' ? songEdit : null} videoId={current?.id} videoName={current?.name} onSectionPractice={(deltas) => void recordSectionPractice(deltas)} focus={focus} onFocusChange={setFocus} showSkeletons={settings.showCameraSkeletons} trackHead={settings.trackHead} showPoseDebug={settings.showPoseDebug} onPhotoFrameReady={onPhotoFrameReady} gamePhase={activeScreen === 'arcade' ? gamePhase : 'lobby'} gameRun={gameRun} difficulty={difficulty} onLobbyChange={updateLobby} onGameScores={updateGameScores} onHit={showHit} onScoreDebug={import.meta.env.DEV ? updateScoreDebug : undefined} onSoloPresence={reportSoloPresence} registrationPlayers={registrationPlayers} onRegistrationPlayersChange={setRegistrationPlayers} registrationScreen={navigation.screen === 'tracking'} diagnosticRequested={diagnosticRequested} onDiagnosticsClose={() => { setDiagnosticRequested(false); dispatch({ type: 'openHome' }) }} gestureContext={gestureContext} onGestureAction={handleGestureAction} soundMuted={settings.soundMuted} onRunningChange={setCameraRunning} />

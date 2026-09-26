@@ -5,6 +5,7 @@ import type { VideoStats } from '../playkitClient'
 import type { ArcadeRecord } from '../game/records'
 
 interface Props {
+  intent?: 'play' | 'edit'
   entries: LibraryEntry[]
   stats: Map<string, VideoStats>
   records?: ArcadeRecord[]
@@ -27,7 +28,7 @@ function when(ts: number): string {
   return `${Math.floor(days / 30)}mo ago`
 }
 
-export default function Library({ entries, stats, records = [], currentId, selectedId, onOpen, onPreview, onForget, onEdit, emptyHint }: Props) {
+export default function Library({ intent = 'play', entries, stats, records = [], currentId, selectedId, onOpen, onPreview, onForget, onEdit, emptyHint }: Props) {
   const [removing, setRemoving] = useState<LibraryEntry | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -46,7 +47,7 @@ export default function Library({ entries, stats, records = [], currentId, selec
   }
 
   return (
-    <><ul className="library" aria-label="Song library">
+    <><ul className="library" aria-label={intent === 'edit' ? 'Songs to edit' : 'Song library'}>
       {entries.map((entry) => {
         const s = stats.get(entry.id)
         const best = bestByVideo.get(entry.id)
@@ -61,11 +62,11 @@ export default function Library({ entries, stats, records = [], currentId, selec
               className="library-open"
               data-track-id={entry.id}
               data-gesture-label={title}
-              data-needs-file={missing ? true : undefined}
+              data-needs-file={missing && intent !== 'edit' ? true : undefined}
               onFocus={() => onPreview?.(entry)}
               onClick={() => onOpen(entry)}
               aria-current={entry.id === selectedId ? 'true' : undefined}
-              title={missing ? `${entry.name} — pick this file again to reload it` : entry.name}
+              title={intent === 'edit' ? `${L('Edit', '编辑')} ${entry.name}` : missing ? `${entry.name} — pick this file again to reload it` : entry.name}
             >
               <span className="library-thumb">
                 {entry.thumb ? <img src={entry.thumb} alt="" /> : <span className="library-thumb-blank" />}
@@ -74,7 +75,7 @@ export default function Library({ entries, stats, records = [], currentId, selec
               <span className="library-meta">
                 <span className="library-name">{title}</span>
                 <span className="library-sub">
-                  {missing ? L('Add video again to play', '重新添加视频以开始游戏') : when(entry.lastOpenedAt)}
+                  {intent === 'edit' ? missing ? L('Edit beatmap · reselect video in editor', '编辑谱面 · 在编辑器中重新选择视频') : L('Edit beatmap', '编辑谱面') : missing ? L('Add video again to play', '重新添加视频以开始游戏') : when(entry.lastOpenedAt)}
                   {s ? ` · ${Math.max(1, Math.round(s.seconds / 60))} min · best ${s.bestMatch}` : ''}
                   {best ? ` · ${T('record')} ${best.bestScore.toLocaleString()} · ${T('grade')} ${best.bestGrade}` : ''}
                 </span>

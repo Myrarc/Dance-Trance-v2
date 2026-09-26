@@ -2815,9 +2815,9 @@ input[type='range'] { accent-color: var(--accent); }
   .camera-practice { top: auto; right: 12px; bottom: 120px; width: min(240px, 40vw); height: auto; }
   .camera-practice .webcam-stage { flex: none; aspect-ratio: 16 / 9; }
   .camera-practice .controls, .camera-practice .panel-head { display: none; }
-  .camera-home, .camera-library, .camera-settings { top: 10px; right: 10px; bottom: auto; width: 120px; }
+  .camera-home, .camera-editor, .camera-photos, .camera-settings { top: 10px; right: 10px; bottom: auto; width: 120px; }
   .camera-setup { right: 10px; bottom: 10px; width: 120px; }
-  .camera-home .player-lobby, .camera-library .player-lobby, .camera-setup .player-lobby, .camera-settings .player-lobby { display: none; }
+  .camera-home .player-lobby, .camera-editor .player-lobby, .camera-photos .player-lobby, .camera-setup .player-lobby, .camera-settings .player-lobby { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .demo-player, .demo-hit, .demo-combo, .attract-start { animation: none; }
@@ -3214,7 +3214,7 @@ input[type='range'] { accent-color: var(--accent); }
 .library-screen .library-name { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; white-space: normal; text-transform: none; letter-spacing: normal; font-family: inherit; font-size: clamp(20px, 1.7vw, 30px); font-weight: 900; line-height: 1.1; overflow-wrap: anywhere; }
 .library-screen .library-sub { font-size: 16px; font-weight: 800; }
 .library-screen .library-forget { top: 16px; right: 16px; background: var(--panel); }
-.camera-library { top: 120px; right: 18px; bottom: auto; width: clamp(180px, 20vw, 260px); }
+.camera-editor, .camera-photos { top: 120px; right: 18px; bottom: auto; width: clamp(180px, 20vw, 260px); }
 
 @media (max-width: 900px) {
   .home-guide-step { gap: 4px; padding-inline: 4px; }
@@ -3230,7 +3230,7 @@ input[type='range'] { accent-color: var(--accent); }
   .home-card { width: min(62vw, 340px); }
   .library-screen { width: calc(100% - 24px); margin: 12px; padding: 18px; }
   .library-screen .library { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .camera-library { top: 10px; right: 10px; width: 120px; }
+  .camera-editor, .camera-photos { top: 10px; right: 10px; width: 120px; }
 }
 @media (max-width: 560px) {
   .home-navigation-guide { padding: 4px; }

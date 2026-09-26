@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 
 const surfaces: Record<string, string> = {
-  home: '.home-screen', tracking: '.tracking-screen', library: '.library-screen',
+  home: '.home-screen', tracking: '.tracking-screen', editor: '.editor-screen', photos: '.photos-screen',
   songs: '.track-picker', focus: '.difficulty-screen', difficulty: '.difficulty-screen',
   settings: '.settings-screen', pause: '.pause-card',
 }

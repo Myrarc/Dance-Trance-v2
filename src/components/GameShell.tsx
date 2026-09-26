@@ -64,7 +64,8 @@ export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, 
   const options = [
     { title: T('Play'), art: 'play' },
     { title: T('Practice Studio'), art: 'practice' },
-    { title: L('Library & photos', '舞蹈库与照片'), art: 'library' },
+    { title: L('Beatmap Editor', '谱面编辑器'), art: 'library' },
+    { title: L('Photos', '照片'), art: 'camera' },
     { title: T('Settings'), art: 'settings' },
     { title: T('Camera setup'), art: 'camera' },
   ]

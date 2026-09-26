@@ -8,6 +8,16 @@ test('the camera stays off until the attract screen is dismissed', () => {
   assert.equal(gameReducer(gameReducer(initialGameState, { type: 'wake' }), { type: 'openHome' }).screen, 'home')
 })
 
+test('editor and photos are separate destinations and Settings returns to each', () => {
+  for (const [type, screen] of [['openEditor', 'editor'], ['openPhotos', 'photos']] as const) {
+    const destination = gameReducer(initialGameState, { type })
+    assert.equal(destination.screen, screen)
+    const settings = gameReducer(destination, { type: 'openSettings' })
+    assert.equal(gameReducer(settings, { type: 'closeSettings' }).screen, screen)
+    assert.equal(gameReducer(destination, { type: 'openHome' }).screen, 'home')
+  }
+})
+
 test('a selected song goes from loading to the round without another player setup', () => {
   let state = gameReducer(initialGameState, { type: 'openArcade' })
   assert.equal(state.arcadePhase, 'setup')
