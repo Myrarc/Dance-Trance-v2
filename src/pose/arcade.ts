@@ -76,13 +76,11 @@ export function drawArcadeHitMarker(
   ctx.strokeStyle = color
   ctx.shadowColor = color
   ctx.shadowBlur = radius * 0.28
-  for (const [scale, alpha] of [[0.58, 0.9], [0.78, 0.7], [1, 0.95]] as const) {
-    ctx.globalAlpha = alpha
-    ctx.lineWidth = scale === 1 ? line * 1.25 : line * 0.65
-    ctx.beginPath()
-    ctx.arc(x, y, r * scale, 0, Math.PI * 2)
-    ctx.stroke()
-  }
+  ctx.globalAlpha = 0.95
+  ctx.lineWidth = line * 1.25
+  ctx.beginPath()
+  ctx.arc(x, y, r, 0, Math.PI * 2)
+  ctx.stroke()
 
   // The warm outer sweep is the clock: it contracts towards the hit point.
   ctx.globalAlpha = 1
@@ -94,20 +92,6 @@ export function drawArcadeHitMarker(
   ctx.beginPath()
   ctx.arc(x, y, r * 1.22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * countdown)
   ctx.stroke()
-
-  // Four small breaks keep the marker reading as a game reticle, not a chart.
-  ctx.shadowBlur = 0
-  ctx.strokeStyle = '#ffffff'
-  ctx.lineWidth = line * 0.55
-  for (let i = 0; i < 4; i++) {
-    const angle = (i * Math.PI) / 2
-    const inner = r * 0.33
-    const outer = r * 0.44
-    ctx.beginPath()
-    ctx.moveTo(x + Math.cos(angle) * inner, y + Math.sin(angle) * inner)
-    ctx.lineTo(x + Math.cos(angle) * outer, y + Math.sin(angle) * outer)
-    ctx.stroke()
-  }
 
   if (impact > 0) {
     ctx.globalAlpha = impact
