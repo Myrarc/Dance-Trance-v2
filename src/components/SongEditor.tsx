@@ -231,7 +231,19 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
     else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') { event.preventDefault(); duplicate() }
     else if (event.code === 'Space') { event.preventDefault(); toggle() }
     else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); seek(time + (event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? .1 : 1 / 30)) }
-    else if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); remove() }
+    else if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault()
+      const target = event.target
+      const lane = target instanceof HTMLButtonElement && target.matches('.editor-marker, .editor-light') ? target.parentElement : null
+      const index = lane ? Array.from(lane.querySelectorAll('button')).indexOf(target as HTMLButtonElement) : -1
+      remove()
+      if (lane && index >= 0) requestAnimationFrame(() => {
+        const buttons = lane.querySelectorAll<HTMLButtonElement>('button')
+        const next = buttons[Math.min(index, buttons.length - 1)]
+        next?.click()
+        next?.focus()
+      })
+    }
     else if (!event.repeat && event.key.toLowerCase() === 'a') addMarker()
     else if (!event.repeat && ['z', 'x', 'c'].includes(event.key.toLowerCase())) addLight(event.key.toLowerCase() === 'z' ? 'beat' : event.key.toLowerCase() === 'x' ? 'accent' : 'burst')
   }}>
