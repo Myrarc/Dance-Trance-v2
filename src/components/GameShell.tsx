@@ -369,7 +369,6 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
                 <div className="result-hit result-hit-miss"><span>{T('Missed move')}</span><b>{player.miss}</b></div>
                 <small>{L(`${movements.scored} movements scored · ${trackingCoverage(player)}% tracking coverage`, `已评分 ${movements.scored} 个动作 · 追踪覆盖率 ${trackingCoverage(player)}%`)}</small>
                 {movements.unscored > 0 && <small>{L(`${movements.unscored} not scored due to tracking`, `${movements.unscored} 个动作因追踪不足未评分`)}</small>}
-                <small>{L('Compared with the reference dancer. Hit circles are visual guides.', '根据与参考舞者的动作相似度评分。打击圈仅用于视觉提示。')}</small>
                 {!recordEligible(player) && <small>{L('Personal best unavailable — camera could not score enough moves.', '无法记录个人最佳：摄像头未能评分足够多的动作。')}</small>}
                 {records[index] && <small className="result-best">{T('Personal best')}: {records[index].record.bestScore.toLocaleString()}</small>}
               </div>
@@ -385,7 +384,20 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
       {photoStatus === 'saved' && <p className="result-photo-status" role="status">{L('Photo saved to Library → Photos', '照片已保存到舞蹈库 → 照片')}</p>}
       {photoStatus === 'saving' && <p className="result-photo-status" role="status">{L('Saving your photo…', '正在保存照片…')}</p>}
       {(photoStatus === 'error' || photoStatus === 'cancelled') && <p className="result-photo-status" role="alert">{L(photoStatus === 'error' ? 'Photo could not be saved.' : 'Photo countdown stopped when this page was hidden.', photoStatus === 'error' ? '照片未能保存。' : '页面隐藏时，拍照倒计时已停止。')} <button className="btn" onClick={retryPhoto}>{L('Retry photo', '重试拍照')}</button></p>}
-      <p className="gesture-hint">{T('Right hand up to replay · left hand up to choose a song')}</p>
+      <div className="result-gesture-banner" role="note" aria-label={L('Gesture controls', '手势操作')}>
+        <span className="result-gesture-title">{L('Your next move', '下一步')}</span>
+        <div className="result-gesture-choices">
+          <span className="result-gesture-choice">
+            <b aria-hidden="true">R↑</b>
+            <strong>{L('Right hand up to replay', '举起右手重玩')}</strong>
+          </span>
+          <span className="result-gesture-or">{L('or', '或')}</span>
+          <span className="result-gesture-choice">
+            <b aria-hidden="true">L↑</b>
+            <strong>{L('Left hand up to choose a song', '举起左手选择歌曲')}</strong>
+          </span>
+        </div>
+      </div>
       {photoStatus === 'waiting' && stage.phase === 'posing' && createPortal(<div className="result-photo-prompt" role="status" aria-live="polite"><strong>{T(photoPrompt)}</strong><span>{stage.digit}</span></div>, document.body)}
       {flash && createPortal(<div className="result-photo-flash" aria-hidden="true" />, document.body)}
     </section>
