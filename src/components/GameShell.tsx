@@ -2,7 +2,7 @@ import ScoringRecorder from './ScoringRecorder'
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { T, L } from '../i18n'
-import { accuracy, recordEligible, type PlayerRound } from '../pose/gameplay'
+import { accuracy, movementResults, recordEligible, trackingCoverage, type PlayerRound } from '../pose/gameplay'
 import type { Difficulty } from '../pose/hitTargets'
 import { gradeFromAccuracy, type ArcadeRecord, type Grade } from '../game/records'
 import { MENU_THEMES, type GameSettings } from '../lib/gameSettings'
@@ -350,6 +350,7 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
       <div className={`result-players${players.length > 1 ? ' is-multiplayer' : ''}`}>
         {players.map((player, index) => {
           const resultAccuracy = accuracy(player)
+          const movements = movementResults(player)
           const grade: Grade = gradeFromAccuracy(resultAccuracy)
           return (
             <article key={index}>
@@ -360,11 +361,15 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
                 <strong className="result-score"><AnimatedScore value={player.score} reduced={reducedEffects} /></strong>
               </div>
               <div className="result-breakdown">
-                <div className="result-stat"><span>{T('accuracy')}</span><b>{resultAccuracy}%</b></div>
+                <h4>{T('Movement breakdown')}</h4>
+                <div className="result-stat"><span>{T('Average movement match')}</span><b>{resultAccuracy}%</b></div>
                 <div className="result-stat"><span>{T('max combo')}</span><b>{player.maxCombo}×</b></div>
-                <div className="result-hit result-hit-perfect"><span>{T('Perfect')}</span><b>{player.perfect}</b></div>
-                <div className="result-hit result-hit-good"><span>{T('Good')}</span><b>{player.good}</b></div>
-                <div className="result-hit result-hit-miss"><span>{T('Miss')}</span><b>{player.miss}</b></div>
+                <div className="result-hit result-hit-perfect"><span>{T('Perfect match')}</span><b>{player.perfect}</b></div>
+                <div className="result-hit result-hit-good"><span>{T('Good match')}</span><b>{player.good}</b></div>
+                <div className="result-hit result-hit-miss"><span>{T('Missed move')}</span><b>{player.miss}</b></div>
+                <small>{L(`${movements.scored} movements scored · ${trackingCoverage(player)}% tracking coverage`, `已评分 ${movements.scored} 个动作 · 追踪覆盖率 ${trackingCoverage(player)}%`)}</small>
+                {movements.unscored > 0 && <small>{L(`${movements.unscored} not scored due to tracking`, `${movements.unscored} 个动作因追踪不足未评分`)}</small>}
+                <small>{L('Compared with the reference dancer. Hit circles are visual guides.', '根据与参考舞者的动作相似度评分。打击圈仅用于视觉提示。')}</small>
                 {!recordEligible(player) && <small>{L('Personal best unavailable — camera could not score enough moves.', '无法记录个人最佳：摄像头未能评分足够多的动作。')}</small>}
                 {records[index] && <small className="result-best">{T('Personal best')}: {records[index].record.bestScore.toLocaleString()}</small>}
               </div>

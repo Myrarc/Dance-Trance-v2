@@ -2927,6 +2927,7 @@ input[type='range'] { accent-color: var(--accent); }
   box-shadow: 0 0 0 5px var(--panel), 0 0 0 8px var(--accent);
   pointer-events: none;
 }
+.result-breakdown h4 { margin: 0; padding: 12px 16px; background: var(--ink); color: var(--panel); font-size: clamp(16px, 1.15vw, 21px); letter-spacing: .06em; text-transform: uppercase; }
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
   html:not(.reduce-effects) .song-card:hover { scale: 1.025; box-shadow: 11px 14px 0 var(--ink); }
   html:not(.reduce-effects) :is(.home-screen, .track-picker, .difficulty-screen, .settings-screen, .library-screen, .pause-card) .btn {

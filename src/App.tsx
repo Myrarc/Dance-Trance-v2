@@ -32,7 +32,7 @@ import { beatPulseAt } from './lib/menuPulse'
 import { beatGlowAt, loadBeatMap, songBeatKey, themeBeatKey, type BeatMap } from './lib/beatMaps'
 import { spawnEdgeStars } from './lib/edgeStars'
 import { playSfx } from './lib/sfx'
-import { accuracy, recordEligible, type GamePhase, type HitGrade, type PlayerRound } from './pose/gameplay'
+import { accuracy, movementResults, recordEligible, trackingCoverage, type GamePhase, type HitGrade, type PlayerRound } from './pose/gameplay'
 import type { Difficulty } from './pose/hitTargets'
 import type { GestureContext, MenuGesture } from './pose/gestures'
 import { gameReducer, initialGameState, type AppScreen } from './game/state'
@@ -449,14 +449,20 @@ export default function App() {
     const image = await composeResultPhoto(frame, {
       songName: current?.name ?? T('Your dance'),
       difficulty,
-      players: gamePlayers.map((player) => ({
-        score: player.score,
-        accuracy: accuracy(player),
-        maxCombo: player.maxCombo,
-        perfect: player.perfect,
-        good: player.good,
-        miss: player.miss,
-      })),
+      players: gamePlayers.map((player) => {
+        const movements = movementResults(player)
+        return {
+          score: player.score,
+          accuracy: accuracy(player),
+          maxCombo: player.maxCombo,
+          perfect: player.perfect,
+          good: player.good,
+          miss: player.miss,
+          movementsScored: movements.scored,
+          unscored: movements.unscored,
+          trackingCoverage: trackingCoverage(player),
+        }
+      }),
     })
     if (!gamePlayers.length) throw new Error('Final score is unavailable')
     await saveResultPhoto({

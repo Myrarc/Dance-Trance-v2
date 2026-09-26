@@ -264,6 +264,11 @@ export const trackingCoverage = (player: PlayerRound) =>
   isMotionRound(player) && (player.expectedIntervals || player.possibleIntervals)
     ? Math.round(player.coverageSum / Math.max(player.expectedIntervals, player.possibleIntervals) * 100) : 0
 
+export const movementResults = (player: PlayerRound) => {
+  const total = isMotionRound(player) ? Math.max(player.expectedIntervals, player.possibleIntervals) : player.judged
+  return { scored: player.judged, unscored: Math.max(0, total - player.judged), total }
+}
+
 export const recordEligible = (player: PlayerRound) =>
   isMotionRound(player) && player.judged > 0 && trackingCoverage(player) >= 70
 

@@ -34,6 +34,14 @@ test('an unfinished run cannot turn sparse tracked movement into a personal best
   assert.equal(gameplay.recordEligible(round), false)
 })
 
+test('results separate scored movement from intervals lost to tracking', () => {
+  let round = gameplay.newMotionRound(3)
+  round = gameplay.advanceMotionRound(round, { quality: 0.92, coverage: 1, lag: 0 }, 'move')
+  round = gameplay.advanceMotionRound(round, { quality: null, coverage: 0, lag: 0 }, 'move')
+  assert.deepEqual(gameplay.movementResults(round), { scored: 1, unscored: 2, total: 3 })
+  assert.equal(round.miss, 0)
+})
+
 test('two players keep independent movement points, timing, and combo', () => {
   const first = gameplay.advanceMotionRound(
     gameplay.newMotionRound(1),

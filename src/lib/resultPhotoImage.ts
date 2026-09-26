@@ -7,6 +7,9 @@ export interface PhotoPlayerScore {
   perfect: number
   good: number
   miss: number
+  movementsScored: number
+  unscored: number
+  trackingCoverage: number
 }
 
 export interface PhotoScoreSnapshot {
@@ -62,16 +65,17 @@ function playerCard(context: CanvasRenderingContext2D, player: PhotoPlayerScore,
   context.fillStyle = CYAN
   context.fillRect(x + 23, y + (compact ? 125 : 172), width - 46, 5)
   context.fillStyle = INK
-  fittedText(context, `${player.accuracy}% ACCURACY`, x + 23, y + (compact ? 160 : 220), width - 46, compact ? 25 : 35)
-  fittedText(context, `${player.maxCombo}× MAX COMBO`, x + 23, y + (compact ? 190 : 266), width - 46, compact ? 25 : 35)
+  fittedText(context, `${player.accuracy}% MOVEMENT MATCH`, x + 23, y + (compact ? 158 : 220), width - 46, compact ? 24 : 34)
+  fittedText(context, `${player.maxCombo}× MAX COMBO`, x + 23, y + (compact ? 184 : 260), width - 46, compact ? 22 : 30)
+  fittedText(context, `${player.movementsScored} SCORED · ${player.unscored} UNSCORED · ${player.trackingCoverage}% TRACKING`, x + 23, y + (compact ? 207 : 294), width - 46, compact ? 20 : 24)
 
   const rows = [
-    ['PERFECT', player.perfect, CYAN],
-    ['GOOD', player.good, GOLD],
-    ['MISS', player.miss, CORAL],
+    ['PERFECT MATCH', player.perfect, CYAN],
+    ['GOOD MATCH', player.good, GOLD],
+    ['MISSED MOVE', player.miss, CORAL],
   ] as const
   rows.forEach(([label, count, color], row) => {
-    const rowY = y + (compact ? 226 + row * 22 : 301 + row * 83)
+    const rowY = y + (compact ? 234 + row * 20 : 320 + row * 76)
     if (compact) {
       context.fillStyle = color
       context.fillRect(x + 23, rowY - 15, 15, 15)
@@ -82,14 +86,14 @@ function playerCard(context: CanvasRenderingContext2D, player: PhotoPlayerScore,
       context.textAlign = 'left'
     } else {
       context.fillStyle = color
-      context.fillRect(x + 23, rowY, width - 46, 70)
+      context.fillRect(x + 23, rowY, width - 46, 64)
       context.strokeStyle = INK
       context.lineWidth = 3
-      context.strokeRect(x + 23, rowY, width - 46, 70)
+      context.strokeRect(x + 23, rowY, width - 46, 64)
       context.fillStyle = INK
-      fittedText(context, label, x + 39, rowY + 47, 250, 35)
+      fittedText(context, label, x + 39, rowY + 44, 250, 33)
       context.textAlign = 'right'
-      fittedText(context, count.toLocaleString(), x + width - 41, rowY + 48, 100, 39, 'Trance Display')
+      fittedText(context, count.toLocaleString(), x + width - 41, rowY + 45, 100, 37, 'Trance Display')
       context.textAlign = 'left'
     }
   })
