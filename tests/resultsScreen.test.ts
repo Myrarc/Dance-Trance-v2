@@ -23,8 +23,10 @@ test('results make gesture choices prominent without the visual-guide explanatio
     }))
 
     assert.match(html, /class="result-gesture-banner"/)
-    assert.match(html, /Right hand up to replay/)
-    assert.match(html, /Left hand up to choose a song/)
+    assert.match(html, /Right hand up - Replay/)
+    assert.match(html, /Left hand up - Choose song/)
+    assert.doesNotMatch(html, /Your next move/)
+    assert.doesNotMatch(html, /R↑|L↑/)
     assert.doesNotMatch(html, /Compared with the reference dancer/)
   } finally {
     await server.close()

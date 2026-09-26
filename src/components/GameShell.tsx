@@ -385,18 +385,8 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
       {photoStatus === 'saving' && <p className="result-photo-status" role="status">{L('Saving your photo…', '正在保存照片…')}</p>}
       {(photoStatus === 'error' || photoStatus === 'cancelled') && <p className="result-photo-status" role="alert">{L(photoStatus === 'error' ? 'Photo could not be saved.' : 'Photo countdown stopped when this page was hidden.', photoStatus === 'error' ? '照片未能保存。' : '页面隐藏时，拍照倒计时已停止。')} <button className="btn" onClick={retryPhoto}>{L('Retry photo', '重试拍照')}</button></p>}
       <div className="result-gesture-banner" role="note" aria-label={L('Gesture controls', '手势操作')}>
-        <span className="result-gesture-title">{L('Your next move', '下一步')}</span>
-        <div className="result-gesture-choices">
-          <span className="result-gesture-choice">
-            <b aria-hidden="true">R↑</b>
-            <strong>{L('Right hand up to replay', '举起右手重玩')}</strong>
-          </span>
-          <span className="result-gesture-or">{L('or', '或')}</span>
-          <span className="result-gesture-choice">
-            <b aria-hidden="true">L↑</b>
-            <strong>{L('Left hand up to choose a song', '举起左手选择歌曲')}</strong>
-          </span>
-        </div>
+        <p className="result-gesture-line result-gesture-replay">{L('Right hand up - Replay', '右手举起 - 重玩')}</p>
+        <p className="result-gesture-line result-gesture-song">{L('Left hand up - Choose song', '左手举起 - 选择歌曲')}</p>
       </div>
       {photoStatus === 'waiting' && stage.phase === 'posing' && createPortal(<div className="result-photo-prompt" role="status" aria-live="polite"><strong>{T(photoPrompt)}</strong><span>{stage.digit}</span></div>, document.body)}
       {flash && createPortal(<div className="result-photo-flash" aria-hidden="true" />, document.body)}

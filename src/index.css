@@ -1583,69 +1583,36 @@ header .sub {
 .results-card .result-breakdown b { font-weight: 950; }
 .result-gesture-banner {
   width: min(100%, 760px);
-  margin: 24px auto 0;
-  overflow: hidden;
-  border: 4px solid var(--ink);
-  border-radius: 16px;
-  background: var(--ink);
-  color: var(--panel);
-  box-shadow: 7px 7px 0 var(--cyan);
-}
-
-.result-gesture-title {
-  display: block;
-  padding: 7px 16px 6px;
-  background: var(--accent);
-  color: var(--ink);
-  font-size: clamp(13px, 1vw, 17px);
-  font-weight: 950;
-  letter-spacing: .12em;
-  text-align: center;
-  text-transform: uppercase;
-}
-
-.result-gesture-choices {
+  margin: 12px auto 0;
   display: grid;
-  grid-template-columns: 1fr;
-  align-items: stretch;
+  gap: 2px;
 }
 
-.result-gesture-choice {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  min-width: 0;
-  padding: 12px 16px;
-  text-align: left;
-}
-
-.result-gesture-choice b {
-  flex: 0 0 auto;
-  min-width: 54px;
-  padding: 7px 8px;
-  border: 3px solid var(--ink);
-  border-radius: 10px;
-  background: var(--cyan);
+.result-gesture-line {
+  margin: 0;
   color: var(--ink);
-  box-shadow: 3px 3px 0 var(--panel);
-  font-family: 'Trance Display', Impact, sans-serif;
-  font-size: clamp(23px, 2.2vw, 34px);
-  line-height: 1;
+  font-size: clamp(15px, 1.1vw, 18px);
+  font-weight: 950;
+  line-height: 1.2;
   text-align: center;
 }
 
-.result-gesture-choice:last-child b { background: var(--warn); }
-.result-gesture-choice strong { color: var(--panel); font-size: clamp(18px, 1.55vw, 25px); line-height: 1.12; }
-
-.result-gesture-or {
-  display: grid;
-  place-items: center;
-  padding: 2px 16px;
-  color: var(--warn);
-  font-size: 15px;
-  font-weight: 950;
-  text-transform: uppercase;
+@media (min-width: 901px) and (max-height: 1100px) {
+  .game-flow.game-results { padding-top: 12px; padding-bottom: 12px; }
+  .results-card { padding: clamp(18px, 2vh, 24px); }
+  .results-card h2 { margin-bottom: 12px; font-size: clamp(34px, 5vh, 48px); }
+  .results-card .result-players article { padding: 18px 20px; }
+  .results-card .result-players h3 { font-size: clamp(26px, 4vh, 42px); }
+  .results-card .grade-stamp { width: 72px; height: 72px; border-width: 4px; font-size: 50px; }
+  .result-headline { margin: 8px 0 4px; }
+  .result-breakdown { margin-top: 12px; }
+  .result-stat { min-height: 40px; }
+  .result-hit { min-height: 50px; }
+  .results-card .result-breakdown { font-size: clamp(15px, 1.7vh, 18px); line-height: 1.15; }
+  .results-card .result-hit span { font-size: clamp(22px, 3.2vh, 30px); }
+  .results-card .result-hit b { font-size: clamp(26px, 3.6vh, 34px); }
+  .result-breakdown > small { margin-top: 6px; }
+  .results-card .result-actions { margin-top: 12px; }
 }
 
 @media (max-width: 900px) {
