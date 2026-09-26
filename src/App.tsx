@@ -1,4 +1,5 @@
 import { RecordingBadge } from './components/ScoringRecorder'
+import { useMenuMotion } from './lib/useMenuMotion'
 import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import type { TargetPose } from './components/VideoPanel'
 import type { ScoreDebug } from './components/WebcamPanel'
@@ -150,6 +151,13 @@ export default function App() {
   const trackingDigitRef = useRef<number | null>(null)
 
   const arcadePhase = navigation.arcadePhase
+  const motionView = navigation.screen === 'settings' ? 'settings'
+    : activeScreen === 'arcade' && arcadePhase === 'paused' ? 'pause'
+    : (activeScreen === 'arcade' || activeScreen === 'practice') && !src ? 'songs'
+    : activeScreen === 'arcade' && arcadePhase === 'setup' && choosingScoreFocus ? 'focus'
+    : activeScreen === 'arcade' && arcadePhase === 'setup' && choosingDifficulty ? 'difficulty'
+    : navigation.screen
+  const menuMotionRef = useMenuMotion(motionView, settings.reducedEffects)
   const baseGamePhase: GamePhase = arcadePhase === 'setup' ? 'lobby' : arcadePhase
   const gamePhase = effectiveTrackingPhase(baseGamePhase, trackingRecovery)
 
@@ -1101,7 +1109,7 @@ export default function App() {
 
   useLangTick()
   return (
-    <div className="app-shell">
+    <div ref={menuMotionRef} className="app-shell">
       <UpdateToast />
       <div ref={edgeRef} className="edge-light" aria-hidden="true" />
       <div ref={edgeStarsRef} className="edge-stars" aria-hidden="true" />

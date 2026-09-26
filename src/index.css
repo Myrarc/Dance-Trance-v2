@@ -2914,9 +2914,29 @@ input[type='range'] { accent-color: var(--accent); }
   text-align: left;
   box-shadow: 8px 8px 0 var(--ink);
   transform: translateX(calc(-50% + var(--shift))) scale(var(--side-scale, .86));
-  transition: transform .34s cubic-bezier(.2,.8,.2,1), background-color .34s;
+  transition: transform .34s cubic-bezier(.2,.8,.2,1), background-color .34s, box-shadow .18s, scale .18s;
   backface-visibility: hidden;
 }
+.menu-click-burst {
+  position: fixed;
+  z-index: 300;
+  width: 64px;
+  height: 64px;
+  border: 3px solid var(--cyan);
+  border-radius: 18px;
+  box-shadow: 0 0 0 5px var(--panel), 0 0 0 8px var(--accent);
+  pointer-events: none;
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  html:not(.reduce-effects) .song-card:hover { scale: 1.025; box-shadow: 11px 14px 0 var(--ink); }
+  html:not(.reduce-effects) :is(.home-screen, .track-picker, .difficulty-screen, .settings-screen, .library-screen, .pause-card) .btn {
+    transition: scale .18s cubic-bezier(.2,.8,.2,1), box-shadow .18s, background-color .18s;
+  }
+  html:not(.reduce-effects) :is(.home-screen, .track-picker, .difficulty-screen, .settings-screen, .library-screen, .pause-card) .btn:hover { scale: 1.035; }
+}
+.song-card:active { scale: .97; }
+.reduce-effects .song-card:active { scale: 1; }
+@media (prefers-reduced-motion: reduce) { .song-card:active { scale: 1; } }
 .song-card-left { --shift: calc(0px - var(--carousel-step)); }
 .song-card-right { --shift: var(--carousel-step); }
 .song-card-center { z-index: 2; outline: 5px solid var(--accent); outline-offset: 5px; background: var(--warn); transform: translateX(-50%) scale(1); }
