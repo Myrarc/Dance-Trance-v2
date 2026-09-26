@@ -12,6 +12,7 @@ export interface VisualMarker {
   x: number
   y: number
 }
+export type MarkerSequenceItem = Omit<VisualMarker, 'id'>
 export interface SongEdit {
   version: 1
   duration: number
@@ -85,6 +86,31 @@ export type PreviewPart = 'head' | 'hands' | 'feet'
 export const cuePreviewPart = (cue: CueEvent): PreviewPart => cue.kind === 'clap' || cue.joint.endsWith('Hand') ? 'hands' : cue.joint.endsWith('Foot') ? 'feet' : 'head'
 export function filterPreviewCues(cues: CueEvent[], visible: Record<PreviewPart, boolean>) {
   return cues.filter((cue) => visible[cuePreviewPart(cue)])
+}
+export function markerRange(markers: VisualMarker[], fromId: string, toId: string) {
+  const ordered = [...markers].sort((a, b) => a.time - b.time)
+  const from = ordered.findIndex((marker) => marker.id === fromId)
+  const to = ordered.findIndex((marker) => marker.id === toId)
+  if (from < 0 || to < 0) return [toId]
+  return ordered.slice(Math.min(from, to), Math.max(from, to) + 1).map((marker) => marker.id)
+}
+export function copyMarkerSequence(markers: VisualMarker[], ids: string[]): MarkerSequenceItem[] {
+  const chosen = markers.filter((marker) => ids.includes(marker.id)).sort((a, b) => a.time - b.time)
+  const start = chosen[0]?.time ?? 0
+  return chosen.map((marker) => ({
+    kind: marker.kind,
+    joint: marker.joint,
+    time: marker.time - start,
+    duration: marker.duration,
+    x: marker.x,
+    y: marker.y,
+  }))
+}
+export function pasteMarkerSequence(sequence: MarkerSequenceItem[], at: number, duration: number, makeId = () => crypto.randomUUID()): VisualMarker[] {
+  if (!sequence.length) return []
+  const span = Math.max(...sequence.map((marker) => marker.time + (marker.kind === 'hold' ? marker.duration : 0)))
+  const start = Math.max(0, Math.min(at, duration - span))
+  return sequence.map((marker) => ({ ...marker, id: makeId(), time: start + marker.time }))
 }
 export const isTrimmed = (edit: SongEdit | null) => !!edit && (edit.start > 0.01 || edit.end < edit.duration - 0.01)
 export function withinTrim<T extends { start: number; end: number }>(intervals: T[], edit?: Pick<SongEdit, 'start' | 'end'> | null): T[] {
