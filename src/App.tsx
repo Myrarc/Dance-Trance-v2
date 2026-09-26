@@ -7,6 +7,7 @@ import ResultPhotoGallery from './components/ResultPhotoGallery'
 import BeatLab from './components/BeatLab'
 import UpdateToast from './components/UpdateToast'
 import AttractKiosk from './components/AttractKiosk'
+import { createAnalysisQueue } from './lib/analysisQueue'
 import { Brand, HomeScreen, PauseOverlay, ResultsScreen, SettingsScreen, type ResultRecord } from './components/GameShell'
 import { T, L, useLangTick, getLang, setLang } from './i18n'
 import { LEVEL_COLORS, SIDE_COLORS } from './pose/skeleton'
@@ -78,8 +79,15 @@ export default function App() {
   const [current, setCurrent] = useState<LibraryEntry | null>(null)
   const [focus, setFocus] = useState<Focus>('full')
   const [track, setTrack] = useState<PoseTrack | null>(null)
-  const [analysing, setAnalysing] = useState<number | null>(null)
-  const [analysisMessage, setAnalysisMessage] = useState<string | null>(null)
+  const [preparation, setPreparation] = useState<Record<string, { name: string; progress: number | null; error?: string }>>({})
+  const [importMessage, setImportMessage] = useState<string | null>(null)
+  const [analysisQueue] = useState(createAnalysisQueue)
+  const attemptedAnalysis = useRef(new Set<string>())
+  const currentAnalysisId = useRef(current?.id)
+  currentAnalysisId.current = current?.id
+  const currentPreparation = current ? preparation[current.id] : undefined
+  const analysing = currentPreparation && !currentPreparation.error ? currentPreparation.progress ?? 0 : null
+  const analysisMessage = currentPreparation?.error ?? null
   const [settings, setSettings] = useState<GameSettings>(() => ({ ...loadGameSettings(), language: getLang() }))
   const [difficulty, setDifficulty] = useState<Difficulty>('normal')
   const [choosingScoreFocus, setChoosingScoreFocus] = useState(false)
@@ -245,7 +253,6 @@ export default function App() {
   useEffect(() => {
     let cancelled = false
     setTrack(null)
-    setAnalysisMessage(null)
     if (!currentId) return
     void getTrack(currentId).then(async (stored) => {
       const { unpackTrack } = await import('./pose/track')
@@ -462,27 +469,43 @@ export default function App() {
     playSfx(grade, settings.soundMuted)
   }, [settings.soundMuted])
 
-  const analyseBlob = async (entry: LibraryEntry, blob: Blob) => {
-    if (analysing != null) return
-    setAnalysing(0)
-    setAnalysisMessage(null)
-    try {
-      const { analyseVideo, packTrack } = await import('./pose/track')
-      const result = await analyseVideo(blob, setAnalysing, () => false, undefined,
-        () => setAnalysisMessage(L('Preparing your song a different way…', '正在用另一种方式准备歌曲…')))
-      if (result) {
-        await saveTrack(entry.id, packTrack(result))
-        setTrack(result)
-        setAnalysisMessage(null)
-        await refresh()
+  const analyseBlob = async (entry: LibraryEntry, blob?: Blob) => {
+    attemptedAnalysis.current.add(entry.id)
+    setPreparation((all) => ({ ...all, [entry.id]: all[entry.id] && !all[entry.id].error ? all[entry.id] : { name: entry.name, progress: null } }))
+    return analysisQueue.enqueue(entry.id, async (cancelled) => {
+      try {
+        const source = blob ?? await getVideo(entry.id)
+        if (cancelled()) return
+        if (!source) throw new Error('Select the video again to prepare it')
+        const { analyseVideo, packTrack } = await import('./pose/track')
+        const result = await analyseVideo(source, (progress) => {
+          if (!cancelled()) setPreparation((all) => ({ ...all, [entry.id]: { name: entry.name, progress } }))
+        }, cancelled)
+        if (!result && !cancelled()) throw new Error('No dance analysis was produced')
+        if (result && !cancelled()) {
+          await saveTrack(entry.id, packTrack(result))
+          if (cancelled()) return
+          if (!await getTrack(entry.id)) throw new Error('Could not save analysis on this device')
+          if (currentAnalysisId.current === entry.id) setTrack(result)
+          setPreparation((all) => { const next = { ...all }; delete next[entry.id]; return next })
+          await refresh()
+        }
+      } catch (error) {
+        console.error('Video analysis failed', error)
+        if (!cancelled()) setPreparation((all) => ({ ...all, [entry.id]: { name: entry.name, progress: null, error: L('Preparation failed. Open the song to retry.', '准备失败。打开歌曲重试。') } }))
       }
-    } catch (error) {
-      console.error('Video analysis failed', error)
-      setAnalysisMessage(L('Could not prepare this video. Try another file.', '无法准备此视频，请试试其他文件。'))
-    } finally {
-      setAnalysing(null)
-    }
+    })
   }
+
+  const analyseBlobRef = useRef(analyseBlob)
+  analyseBlobRef.current = analyseBlob
+  useEffect(() => {
+    for (const entry of library) {
+      if (entry.analysed || !entry.hasVideo || attemptedAnalysis.current.has(entry.id)) continue
+      void analyseBlobRef.current(entry)
+    }
+  }, [library])
+  useEffect(() => () => { analysisQueue.cancelAll(); attemptedAnalysis.current.clear() }, [analysisQueue])
 
   const analyse = async () => {
     if (!current || analysing != null) return
@@ -505,6 +528,7 @@ export default function App() {
     play(file)
     const entry = await remember(file)
     setCurrent(entry)
+    currentAnalysisId.current = entry?.id
     setChoosingScoreFocus(destination === 'arcade')
     setChoosingDifficulty(false)
     setFocusMotion(null)
@@ -516,7 +540,7 @@ export default function App() {
       const stored = await getTrack(entry.id)
       const { unpackTrack } = await import('./pose/track')
       const decoded = stored ? unpackTrack(stored) : null
-      if (decoded?.rhythmAnalysed) setTrack(decoded)
+      if (decoded?.rhythmAnalysed) { if (currentAnalysisId.current === entry.id) setTrack(decoded) }
       else await analyseBlob(entry, file)
     }
   }
@@ -532,6 +556,7 @@ export default function App() {
     setTrack(null)
     play(blob)
     setCurrent(entry)
+    currentAnalysisId.current = entry.id
     setChoosingScoreFocus(destination === 'arcade')
     setChoosingDifficulty(false)
     setFocusMotion(null)
@@ -542,8 +567,28 @@ export default function App() {
     const stored = await getTrack(entry.id)
     const { unpackTrack } = await import('./pose/track')
     const decoded = stored ? unpackTrack(stored) : null
-    if (decoded?.rhythmAnalysed) setTrack(decoded)
+    if (decoded?.rhythmAnalysed) { if (currentAnalysisId.current === entry.id) setTrack(decoded) }
     else await analyseBlob(entry, blob)
+  }
+
+  const loadFiles = async (files: File[], destination: AppScreen) => {
+    if (files.length === 1) { await loadFile(files[0], destination); return }
+    for (const [index, file] of files.entries()) {
+      setImportMessage(L(`Importing ${index + 1}/${files.length}: ${file.name}`, `正在导入 ${index + 1}/${files.length}：${file.name}`))
+      try {
+        if (!file.type.startsWith('video/')) throw new Error('Not a video')
+        const entry = await remember(file)
+        if (!entry) throw new Error('Could not save video')
+        await refresh()
+        void syncLibrary([{ id: entry.id, name: entry.name, duration: entry.duration, lastOpenedAt: entry.lastOpenedAt }])
+        const stored = await getTrack(entry.id)
+        if (!stored) void analyseBlob(entry, file)
+      } catch (error) {
+        console.error('Video import failed', error)
+        setPreparation((all) => ({ ...all, [`import:${file.name}:${index}`]: { name: file.name, progress: null, error: L('Import failed. Select this video again to retry.', '导入失败。请重新选择视频重试。') } }))
+      }
+    }
+    setImportMessage(null)
   }
 
   const updateSections = async (sections: Section[]) => {
@@ -563,6 +608,9 @@ export default function App() {
   }
 
   const forgetEntry = async (entry: LibraryEntry) => {
+    await analysisQueue.cancel(entry.id)
+    attemptedAnalysis.current.delete(entry.id)
+    setPreparation((all) => { const next = { ...all }; delete next[entry.id]; return next })
     await forget(entry.id)
     setBeatMaps((previous) => { const next = new Map(previous); next.delete(songBeatKey(entry.id)); return next })
     if (current?.id === entry.id) {
@@ -887,7 +935,7 @@ export default function App() {
     <section className={`track-picker ${dragOver ? 'over' : ''}`} data-gesture-surface
       onDragOver={(event) => { event.preventDefault(); setDragOver(true) }}
       onDragLeave={() => setDragOver(false)}
-      onDrop={(event) => { event.preventDefault(); setDragOver(false); void loadFile(event.dataTransfer.files?.[0], destination) }}>
+      onDrop={(event) => { event.preventDefault(); setDragOver(false); void loadFiles(Array.from(event.dataTransfer.files), destination) }}>
       <div className="picker-heading"><h1>{L(destination === 'arcade' ? 'Select your track' : 'Select a routine', destination === 'arcade' ? '选择歌曲' : '选择练习')}</h1><p>{L('Left arm out: previous song · Right arm out: next song · Right hand up: play · Left hand up: back', '左臂平伸：上一首 · 右臂平伸：下一首 · 举右手：开始 · 举左手：返回')}</p></div>
       <div className="picker-stage">
         {library.length ? <div key={carouselMotion?.turn ?? 0} className={`song-carousel${carouselMotion ? ` is-moving-${carouselMotion.direction}` : ''}`} data-count={library.length} role="group" aria-label={L('Song picker', '歌曲选择')}>
@@ -1047,7 +1095,14 @@ export default function App() {
       }} onCanPlay={(event) => { if (choicePreviewActive) void event.currentTarget.play().catch(() => undefined) }} onTimeUpdate={(event) => {
         if (event.currentTarget.currentTime >= difficultyPreviewStartRef.current + 7) event.currentTarget.currentTime = difficultyPreviewStartRef.current
       }} />}
-      <input ref={fileInputRef} hidden type="file" accept="video/*" onChange={(event) => { void loadFile(event.target.files?.[0], fileDestinationRef.current); event.target.value = '' }} />
+      <input ref={fileInputRef} hidden type="file" accept="video/*" multiple onChange={(event) => { void loadFiles(Array.from(event.target.files ?? []), fileDestinationRef.current); event.target.value = '' }} />
+      {(importMessage || Object.keys(preparation).length > 0) && <aside className="preparation-status" aria-label={L('Song preparation', '歌曲准备')}>
+        <details>
+          <summary>{importMessage ?? L(`Preparing songs · ${Object.values(preparation).filter((job) => !job.error).length} pending`, `准备歌曲 · ${Object.values(preparation).filter((job) => !job.error).length} 首待处理`)}{Object.values(preparation).some((job) => job.error) && L(' · Needs attention', ' · 需要处理')}</summary>
+          <p>{L('Keep the app open. You can browse while songs prepare.', '请保持应用打开。歌曲准备期间可以浏览菜单。')}</p>
+          {Object.entries(preparation).map(([id, job]) => <p key={id}><strong>{job.name}</strong><br />{job.error ?? (job.progress == null ? L('Queued', '等待中') : `${Math.round(job.progress * 100)}%`)}{job.error && <button onClick={() => setPreparation((all) => { const next = { ...all }; delete next[id]; return next })}>{L('Dismiss', '关闭')}</button>}</p>)}
+        </details>
+      </aside>}
       {navigation.screen === 'attract' && <main ref={attractRef} className={`attract-screen${kioskPlaying ? ' is-demo' : ''}`} onClick={(event) => { if (event.detail === 0) return; playSfx('menu', settings.soundMuted); dispatch({ type: 'wake' }) }}>
         <AttractKiosk library={library} reducedEffects={settings.reducedEffects} onPlayingChange={setKioskPlaying} />
         <div className="attract-rays" aria-hidden="true" />

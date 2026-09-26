@@ -15,11 +15,13 @@ export default function AttractKiosk({ library, reducedEffects, onPlayingChange 
   const [demo, setDemo] = useState<Demo | null>(null)
   const [cycle, setCycle] = useState(0)
   const previousSong = useRef<string | null>(null)
+  const libraryRef = useRef(library)
+  libraryRef.current = library
   useEffect(() => {
     let cancelled = false
     let url: string | null = null
     const timer = window.setTimeout(async () => {
-      for (const entry of kioskSongOrder(library, previousSong.current)) {
+      for (const entry of kioskSongOrder(libraryRef.current, previousSong.current)) {
         try {
           const [video, stored] = await Promise.all([getVideo(entry.id), getTrack(entry.id)])
           if (cancelled) return
@@ -38,7 +40,7 @@ export default function AttractKiosk({ library, reducedEffects, onPlayingChange 
       if (!cancelled) setCycle((value) => value + 1)
     }, KIOSK_TITLE_MS)
     return () => { cancelled = true; clearTimeout(timer); if (url) URL.revokeObjectURL(url) }
-  }, [library, cycle])
+  }, [cycle])
   useEffect(() => {
     onPlayingChange(!!demo)
     return () => onPlayingChange(false)
