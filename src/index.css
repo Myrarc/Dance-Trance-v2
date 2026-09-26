@@ -3307,3 +3307,6 @@ input[type='range'] { accent-color: var(--accent); }
 
 .library-edit { margin: 0 12px 12px; }
 .editor-loading { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: var(--panel); }
+
+.scoring-recording-badge { position: fixed; bottom: 12px; left: 12px; z-index: 180; max-width: min(90vw, 600px); background: #30213f; color: #fff6dc; border: 2px solid #edaa25; border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+.recording-item { border-top: 1px solid currentColor; margin-top: 16px; padding-top: 12px; overflow-wrap: anywhere; }

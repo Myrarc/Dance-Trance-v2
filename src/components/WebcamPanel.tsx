@@ -1,8 +1,11 @@
+import scoringSource from '../pose/motionScore.ts?raw'
+import pointsSource from '../pose/gameplay.ts?raw'
+import { beginRecording, captureScoring, finishRecording, recorderSnapshot, recordingCaptureCost } from '../lib/scoringRecorder'
 import { L, T } from '../i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { NormalizedLandmark, PoseLandmarker } from '@mediapipe/tasks-vision'
-import { createPoseLandmarker } from '../pose/landmarker'
+import { createPoseLandmarker, poseModelDetails } from '../pose/landmarker'
 import { drawSkeleton, LEVEL_COLORS, LM } from '../pose/skeleton'
 import { computeAngles, compareToHistory, compareToHistoryEither, levelConnectionColors, dimmedSegments, HEAD, type Focus, type LagState } from '../pose/angles'
 import { LandmarkSmoother } from '../pose/filter'
@@ -392,6 +395,25 @@ export default function WebcamPanel({
     onGameScores?.(roundsRef.current.slice(0, registeredPlayerCountRef.current))
   }, [gamePhase, gameRun, onGameScores])
 
+  useEffect(() => {
+    if (gamePhase === 'countdown') {
+      finishRecording('restarted', roundsRef.current)
+      beginRecording(videoName ?? 'Unknown song', {
+        scoringVersion: 2, scorer: 'motion-score-v2-2026-09-26', scoringSource, pointsSource,
+        songId: videoId, gameRun, difficulty, focus, trackHead, mirrorMode,
+        players: registeredPlayerCountRef.current, songEdit,
+        reference: motionChartRef.current, referenceTrack: track,
+        camera: capture, userAgent: navigator.userAgent,
+        rules: { lag: { easy: 1.5, normal: 1.1, hard: 0.8 }, sigma: { easy: 35, normal: 27, hard: 20 }, gapGrace: 0.3, lagChange: 0.6, sampleCount: 5 },
+      })
+    }
+    captureScoring('phase', { phase: gamePhase, gameRun, songTime: playbackRefRef.current?.current?.currentTime, results: roundsRef.current })
+    if (gamePhase === 'results' || gamePhase === 'lobby') finishRecording(gamePhase === 'results' ? 'completed' : 'left round', roundsRef.current)
+    // Round boundaries, not preference changes, own the recording lifecycle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gamePhase, gameRun])
+  useEffect(() => () => finishRecording('camera panel closed', roundsRef.current), [])
+
   // Asking every session is friction for something already agreed to, so if
   // the permission is on record the camera comes up by itself. Browsers that
   // do not answer the query simply keep the button.
@@ -578,7 +600,8 @@ export default function WebcamPanel({
       input.getContext('2d')!.drawImage(v, 0, 0, input.width, input.height)
       const inferenceStarted = performance.now()
       const res = lmk.detectForVideo(input, timestampMs)
-      meter.recordInference(performance.now() - inferenceStarted)
+      const inferenceMs = performance.now() - inferenceStarted
+      meter.recordInference(inferenceMs)
       if (cv.width !== v.videoWidth || cv.height !== v.videoHeight) {
         cv.width = v.videoWidth
         cv.height = v.videoHeight
@@ -767,6 +790,19 @@ export default function WebcamPanel({
         onSoloPresenceRef.current?.(playerFrames[0] !== null, frameNow)
       }
 
+      if (recorderSnapshot().active) captureScoring('frame', {
+        frameNow, cameraMediaTime: metadata?.mediaTime, presentedFrames, timestampMs,
+        playbackTime, actualMediaTime: playbackVideo?.currentTime, playbackRate: playbackVideo?.playbackRate,
+        inferenceMs, previousRecorderEventMs: recordingCaptureCost(), metrics: meter.snapshot(frameNow), model: poseModelDetails(lmk),
+        input: { width: input.width, height: input.height }, camera: { width: v.videoWidth, height: v.videoHeight },
+        raw: { landmarks: res.landmarks, worldLandmarks: res.worldLandmarks },
+        detected: detected.map((person) => ({ x: person.x, rawIndex: res.landmarks.indexOf(person.pose) })),
+        selection: { indices, soloIndex, reasons: match?.reasons, lock: playerLockRef.current, registrationIndices },
+        filtered: players.map((person) => person ? { pose: person.pose, world: person.world } : null),
+        scored: playerFrames, focus: focusRef.current, trackHead: trackHeadRef.current, mirrorMode: mirrorModeRef.current,
+        phase: gamePhase, gameRun, ready: isGameRunReady(target.gameRun, gameRun),
+      })
+
       if (gamePhase === 'playing' && isGameRunReady(target.gameRun, gameRun) && motionChartRef.current.intervals.length) {
         const cameraTime = frameNow / 1000
         for (let index = 0; index < registeredPlayerCount; index++) {
@@ -796,6 +832,12 @@ export default function WebcamPanel({
               before.judged > 0,
             )
             const after = advanceMotionRound(before, reading, interval.kind)
+            if (recorderSnapshot().active) captureScoring('judgment', {
+              player: index, playbackTime, interval,
+              input: { player: motionHistoryRef.current[index], difficulty: difficultyRef.current, previousLag: before.lag,
+                mirrored: mirrorModeRef.current === 'auto' ? 'auto' : mirrorModeRef.current === 'mirror', lagLocked: before.judged > 0 },
+              evidence: reading, before, after,
+            })
             scoreDebug.push({
               player: index + 1,
               cue: interval.kind,

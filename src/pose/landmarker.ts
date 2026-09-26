@@ -16,6 +16,8 @@ function getVision() {
 }
 
 export type PoseModel = 'lite' | 'full'
+const modelDetails = new WeakMap<PoseLandmarker, { model: PoseModel; delegate: string; numPoses: number }>()
+export const poseModelDetails = (landmarker: PoseLandmarker) => modelDetails.get(landmarker)
 
 export async function createPoseLandmarker(
   numPoses: number,
@@ -35,13 +37,17 @@ export async function createPoseLandmarker(
     minTrackingConfidence: 0.5,
   }
   try {
-    return await PoseLandmarker.createFromOptions(vision, options)
+    const landmarker = await PoseLandmarker.createFromOptions(vision, options)
+    modelDetails.set(landmarker, { model, delegate: 'GPU', numPoses })
+    return landmarker
   } catch {
     // Some browsers/GPUs fail on the GPU delegate; CPU is slower but always works.
-    return await PoseLandmarker.createFromOptions(vision, {
+    const landmarker = await PoseLandmarker.createFromOptions(vision, {
       ...options,
       baseOptions: { ...options.baseOptions, delegate: 'CPU' },
     })
+    modelDetails.set(landmarker, { model, delegate: 'CPU', numPoses })
+    return landmarker
   }
 }
 

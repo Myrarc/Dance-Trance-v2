@@ -1,3 +1,4 @@
+import { RecordingBadge } from './components/ScoringRecorder'
 import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import type { TargetPose } from './components/VideoPanel'
 import type { ScoreDebug } from './components/WebcamPanel'
@@ -1109,6 +1110,7 @@ export default function App() {
       }} onCanPlay={(event) => { if (choicePreviewActive) void event.currentTarget.play().catch(() => undefined) }} onTimeUpdate={(event) => {
         if (event.currentTarget.currentTime >= Math.min(difficultyPreviewStartRef.current + 7, songEdit?.end ?? Infinity)) event.currentTarget.currentTime = difficultyPreviewStartRef.current
       }} />}
+      <RecordingBadge />
       {editingSong && <Suspense fallback={<div className="editor-loading">Opening song editor…</div>}><SongEditor key={editingSong.id} entry={editingSong} reducedEffects={settings.reducedEffects} onClose={() => setEditingSong(null)} onSaved={() => {
         setEditRevision((value) => value + 1)
         setBeatMaps((previous) => { const next = new Map(previous); next.delete(songBeatKey(editingSong.id)); return next })

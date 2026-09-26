@@ -1,3 +1,4 @@
+import ScoringRecorder from './ScoringRecorder'
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { T, L } from '../i18n'
@@ -186,6 +187,7 @@ export function SettingsScreen({ settings, onChange, onClose, onOpenBeatLab, onO
         <button className="btn" onClick={onClose}>{T('Back')}</button>
       </div>
       <section className="settings-grid">
+        <ScoringRecorder />
         <div className="settings-card">
           <h2>{T('Gameplay')}</h2>
           <button className="btn primary" onClick={onOpenDiagnostics}>{L('Camera diagnostics', '摄像头检测')}</button>
