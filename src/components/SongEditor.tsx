@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { fingerprint, getTrack, getVideo, remember, deleteBeatMap, type LibraryEntry } from '../lib/library'
+import { fingerprint, getTrack, getVideo, remember, deleteBeatMap, readBeatMap, saveTrackCorrections, writeBeatMap, type LibraryEntry, type StoredTrack } from '../lib/library'
 import { loadBeatMap, beatGlowAt, type BeatKind, type BeatMark } from '../lib/beatMaps'
 import { loadSongEdit, saveSongDraft, saveSongEdit, songDraftKey, markerFromCue, visualCues, type SongEdit, type VisualMarker } from '../lib/songEdits'
 import { buildCueChart, HIT_LEAD_S, type CueEvent, type Difficulty, type HitJoint } from '../pose/hitTargets'
 import { sampleTrack, unpackTrack, type PoseTrack } from '../pose/track'
 import { cueColor, drawArcadeHitMarker, drawArcadeHitLabel, drawCueGlyph } from '../pose/arcade'
 import { drawSkeleton, SIDE_COLORS } from '../pose/skeleton'
+import { brushPoseCorrection, type PoseCorrection } from '../pose/poseCorrections'
 import { editorWaveform } from '../lib/editorWaveform'
 import './SongEditor.css'
 
@@ -18,6 +19,21 @@ const FOOT_LANDMARKS = new Set([25, 26, 27, 28, 31, 32])
 type PreviewPart = 'head' | 'hands' | 'feet'
 const cuePart = (cue: CueEvent): PreviewPart => cue.kind === 'clap' || cue.joint.endsWith('Hand') ? 'hands' : cue.joint.endsWith('Foot') ? 'feet' : 'head'
 const cueKey = (cue: CueEvent) => `${cue.kind}:${cue.kind === 'clap' ? 'hands' : cue.joint}:${cue.time.toFixed(4)}`
+const correctionDraftKey = (id: string) => `pose-correction-draft:${id}`
+const adjustableJoints = [
+  { label: 'H', landmarks: [0, 7, 8] },
+  { label: 'LS', landmarks: [11] }, { label: 'RS', landmarks: [12] },
+  { label: 'LE', landmarks: [13] }, { label: 'RE', landmarks: [14] },
+  { label: 'LW', landmarks: [15] }, { label: 'RW', landmarks: [16] },
+  { label: 'LH', landmarks: [23] }, { label: 'RH', landmarks: [24] },
+  { label: 'LK', landmarks: [25] }, { label: 'RK', landmarks: [26] },
+  { label: 'LA', landmarks: [27] }, { label: 'RA', landmarks: [28] },
+]
+const validCorrections = (value: unknown): PoseCorrection[] => Array.isArray(value) ? value.filter((item): item is PoseCorrection => {
+  if (!item || typeof item !== 'object') return false
+  const correction = item as Partial<PoseCorrection>
+  return [correction.frame, correction.landmark, correction.x, correction.y, correction.worldX, correction.worldY].every(Number.isFinite)
+}) : []
 function lightsFor(edit: SongEdit): BeatMark[] {
   const map = edit.lighting
   if (!map) return []
@@ -33,6 +49,11 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
   const [source, setSource] = useState<Blob | null>(null)
   const [url, setUrl] = useState('')
   const [track, setTrack] = useState<PoseTrack | null>(null)
+  const [storedTrack, setStoredTrack] = useState<StoredTrack | null>(null)
+  const [corrections, setCorrections] = useState<PoseCorrection[]>([])
+  const [correctionBaseline, setCorrectionBaseline] = useState('[]')
+  const [correctionUndo, setCorrectionUndo] = useState<PoseCorrection[][]>([])
+  const [correctionRedo, setCorrectionRedo] = useState<PoseCorrection[][]>([])
   const [level, setLevel] = useState<Difficulty>('normal')
   const [selected, setSelected] = useState('')
   const [time, setTime] = useState(0)
@@ -49,6 +70,7 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
   const [showHead, setShowHead] = useState(true)
   const [showHands, setShowHands] = useState(true)
   const [showFeet, setShowFeet] = useState(true)
+  const [adjustSkeleton, setAdjustSkeleton] = useState(false)
   const [previewHit, setPreviewHit] = useState<{ key: string; expiresAt: number } | null>(null)
   const [peaks, setPeaks] = useState<number[]>([])
   const [status, setStatus] = useState('Opening local song…')
@@ -62,8 +84,11 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
   const root = useRef<HTMLDivElement>(null)
   const timeline = useRef<HTMLDivElement>(null)
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const correctionDraftTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const writes = useRef(Promise.resolve())
-  const dirty = !!edit && JSON.stringify(edit) !== baseline
+  const editDirty = !!edit && JSON.stringify(edit) !== baseline
+  const correctionDirty = JSON.stringify(corrections) !== correctionBaseline
+  const dirty = editDirty || correctionDirty
   const generated = useMemo(() => track ? buildCueChart(track, level, true, 'full').map((cue, index) => markerFromCue(cue, `generated-${level}-${index}`)) : [], [track, level])
   const markers = edit?.charts[level] ?? generated
   const cues = useMemo(() => edit ? visualCues({ ...edit, charts: { ...edit.charts, [level]: markers } }, [], level, 'full', true) : [], [edit, level, markers])
@@ -75,17 +100,23 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
   useEffect(() => {
     let stopped = false
     root.current?.focus()
-    void Promise.all([getVideo(entry.id), getTrack(entry.id), loadSongEdit(entry.id), loadSongEdit(entry.id, true), loadBeatMap(`song:${entry.id}`)])
-      .then(([blob, stored, saved, draft, lighting]) => {
+    void Promise.all([getVideo(entry.id), getTrack(entry.id), loadSongEdit(entry.id), loadSongEdit(entry.id, true), loadBeatMap(`song:${entry.id}`), readBeatMap(correctionDraftKey(entry.id))])
+      .then(([blob, stored, saved, draft, lighting, correctionDraft]) => {
         if (stopped) return
-        const decoded = stored && unpackTrack(stored)
+        const savedCorrections = stored?.corrections ?? []
+        const draftCorrections = validCorrections(correctionDraft)
+        const activeCorrections = correctionDraft == null ? savedCorrections : draftCorrections
+        const decoded = stored && unpackTrack({ ...stored, corrections: activeCorrections })
         const initial = saved ? { ...saved, lighting } : { version: 1 as const, duration: entry.duration, start: 0, end: entry.duration, charts: {}, lighting }
         setSource(blob)
+        setStoredTrack(stored)
         setTrack(decoded)
+        setCorrections(activeCorrections)
+        setCorrectionBaseline(JSON.stringify(savedCorrections))
         setBpm(decoded?.bpm ?? 120)
         setEdit(draft ?? initial)
         setBaseline(JSON.stringify(initial))
-        setStatus(draft ? 'Recovered your local draft. Save to apply it.' : 'Edits change visual guides only. Scoring still follows the reference dancer.')
+        setStatus(draft || correctionDraft != null ? 'Recovered your local draft. Save to apply it.' : 'Visual markers guide the player. Saved skeleton corrections also change reference scoring.')
       }).catch((error) => { if (!stopped) setStatus(`Could not open editor: ${String(error)}`) })
     return () => { stopped = true }
   }, [entry.id, entry.duration])
@@ -106,7 +137,7 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
   }, [source, edit?.duration])
   useEffect(() => {
     if (!edit || busy) return
-    if (!dirty) {
+    if (!editDirty) {
       writes.current = writes.current.catch(() => undefined).then(() => deleteBeatMap(songDraftKey(entry.id)))
       void writes.current.catch((error) => setStatus(`Could not clear old draft: ${String(error)}`))
       return
@@ -116,7 +147,20 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
       void writes.current.catch((error) => setStatus(`Draft could not be saved: ${String(error)}`))
     }, 700)
     return () => { if (draftTimer.current) clearTimeout(draftTimer.current) }
-  }, [edit, dirty, busy, entry.id])
+  }, [edit, editDirty, busy, entry.id])
+  useEffect(() => {
+    if (busy) return
+    if (!correctionDirty) {
+      writes.current = writes.current.catch(() => undefined).then(() => deleteBeatMap(correctionDraftKey(entry.id)))
+      void writes.current.catch((error) => setStatus(`Could not clear old skeleton draft: ${String(error)}`))
+      return
+    }
+    correctionDraftTimer.current = setTimeout(() => {
+      writes.current = writes.current.catch(() => undefined).then(() => writeBeatMap(correctionDraftKey(entry.id), corrections))
+      void writes.current.catch((error) => setStatus(`Skeleton draft could not be saved: ${String(error)}`))
+    }, 700)
+    return () => { if (correctionDraftTimer.current) clearTimeout(correctionDraftTimer.current) }
+  }, [corrections, correctionDirty, busy, entry.id])
   useEffect(() => {
     if (!dirty) return
     const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
@@ -143,7 +187,8 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
       const ctx = canvas.getContext('2d')!
       const radius = Math.max(28, canvas.height * 0.052)
       const reduced = reducedEffects || matchMedia('(prefers-reduced-motion: reduce)').matches
-      const pose = showSkeleton && track ? sampleTrack(track, media.currentTime) : null
+      const poseTime = adjustSkeleton && track ? Math.round(media.currentTime * track.fps) / track.fps : media.currentTime
+      const pose = showSkeleton && track ? sampleTrack(track, poseTime) : null
       if (pose) {
         const landmarks = pose.landmarks.map((landmark, index) => ({
           ...landmark,
@@ -158,29 +203,46 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
           sideColors: SIDE_COLORS,
           glow: !reduced,
         })
+        if (adjustSkeleton) {
+          ctx.font = `800 ${Math.max(10, canvas.height * .015)}px system-ui`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          for (const joint of adjustableJoints) {
+            const point = pose.landmarks[joint.landmarks[0]]
+            if (!point || point.visibility < .2) continue
+            const x = point.x * canvas.width, y = point.y * canvas.height
+            const handleRadius = Math.max(11, canvas.height * .017)
+            ctx.beginPath(); ctx.arc(x, y, handleRadius, 0, Math.PI * 2)
+            ctx.fillStyle = '#fff7e0'; ctx.fill()
+            ctx.strokeStyle = '#30213f'; ctx.lineWidth = Math.max(3, canvas.height * .004); ctx.stroke()
+            ctx.fillStyle = '#30213f'; ctx.fillText(joint.label, x, y)
+          }
+        }
       }
-      for (const cue of cues) {
-        if (cue.time < media.currentTime - 0.45 || cue.time > media.currentTime + HIT_LEAD_S) continue
-        const x = cue.x * canvas.width, y = cue.y * canvas.height
-        drawArcadeHitMarker(ctx, x, y, radius, cueColor(cue), cue.time - media.currentTime, reduced)
-        drawCueGlyph(ctx, cue, x, y, radius, media.currentTime)
-        if ((autoHit && cue.time <= media.currentTime) || (previewHit?.key === cueKey(cue) && now <= previewHit.expiresAt)) drawArcadeHitLabel(ctx, x, y, radius, 'perfect')
-      }
-      if (marker) {
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 4
-        ctx.strokeRect(marker.x * canvas.width - radius, marker.y * canvas.height - radius, radius * 2, radius * 2)
-      }
-      const glow = edit.lighting && !reduced ? beatGlowAt(edit.lighting, media.currentTime) : null
-      if (glow) {
-        ctx.strokeStyle = glow.mark.kind === 'burst' ? '#ffd45a' : '#2ec4c6'
-        ctx.globalAlpha = glow.pulse * .7
-        ctx.lineWidth = glow.mark.kind === 'burst' ? 40 : glow.mark.kind === 'accent' ? 25 : 12
-        ctx.strokeRect(0, 0, canvas.width, canvas.height)
+      if (!adjustSkeleton) {
+        for (const cue of cues) {
+          if (cue.time < media.currentTime - 0.45 || cue.time > media.currentTime + HIT_LEAD_S) continue
+          const x = cue.x * canvas.width, y = cue.y * canvas.height
+          drawArcadeHitMarker(ctx, x, y, radius, cueColor(cue), cue.time - media.currentTime, reduced)
+          drawCueGlyph(ctx, cue, x, y, radius, media.currentTime)
+          if ((autoHit && cue.time <= media.currentTime) || (previewHit?.key === cueKey(cue) && now <= previewHit.expiresAt)) drawArcadeHitLabel(ctx, x, y, radius, 'perfect')
+        }
+        if (marker) {
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 4
+          ctx.strokeRect(marker.x * canvas.width - radius, marker.y * canvas.height - radius, radius * 2, radius * 2)
+        }
+        const glow = edit.lighting && !reduced ? beatGlowAt(edit.lighting, media.currentTime) : null
+        if (glow) {
+          ctx.strokeStyle = glow.mark.kind === 'burst' ? '#ffd45a' : '#2ec4c6'
+          ctx.globalAlpha = glow.pulse * .7
+          ctx.lineWidth = glow.mark.kind === 'burst' ? 40 : glow.mark.kind === 'accent' ? 25 : 12
+          ctx.strokeRect(0, 0, canvas.width, canvas.height)
+        }
       }
     }
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [edit, cues, marker, loop, autoHit, previewHit, showSkeleton, showHead, showHands, showFeet, track, reducedEffects, url])
+  }, [edit, cues, marker, loop, autoHit, previewHit, showSkeleton, showHead, showHands, showFeet, adjustSkeleton, track, reducedEffects, url])
 
   const change = (next: SongEdit) => { if (edit) setUndo((history) => [...history.slice(-79), edit]); setRedo([]); setEdit(next) }
   const seek = (next: number) => { if (video.current && edit) { video.current.currentTime = Math.max(0, Math.min(edit.duration, next)); setTime(video.current.currentTime) } }
@@ -208,9 +270,45 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
   }
   const undoEdit = () => { const previous = undo.at(-1); if (previous && edit) { setRedo((history) => [...history, edit]); setUndo(undo.slice(0, -1)); setEdit(previous); setSelected('') } }
   const redoEdit = () => { const next = redo.at(-1); if (next && edit) { setUndo((history) => [...history, edit]); setRedo(redo.slice(0, -1)); setEdit(next); setSelected('') } }
+  const showCorrections = (next: PoseCorrection[]) => {
+    setCorrections(next)
+    if (storedTrack) setTrack(unpackTrack({ ...storedTrack, corrections: next }))
+  }
+  const changeCorrections = (next: PoseCorrection[]) => {
+    setCorrectionUndo((history) => [...history.slice(-79), corrections])
+    setCorrectionRedo([])
+    showCorrections(next)
+  }
+  const undoCorrection = () => {
+    const previous = correctionUndo.at(-1)
+    if (!previous) return
+    setCorrectionRedo((history) => [...history, corrections])
+    setCorrectionUndo(correctionUndo.slice(0, -1))
+    showCorrections(previous)
+  }
+  const redoCorrection = () => {
+    const next = correctionRedo.at(-1)
+    if (!next) return
+    setCorrectionUndo((history) => [...history, corrections])
+    setCorrectionRedo(correctionRedo.slice(0, -1))
+    showCorrections(next)
+  }
+  const correctionFrame = () => track ? Math.max(0, Math.min(track.frames - 1, Math.round((video.current?.currentTime ?? time) * track.fps))) : -1
+  const toggleAdjustment = () => {
+    if (!track) { setStatus('Reference analysis is not available yet.'); return }
+    const next = !adjustSkeleton
+    setAdjustSkeleton(next)
+    setShowSkeleton(true)
+    if (next) {
+      video.current?.pause()
+      seek(correctionFrame() / track.fps)
+      setStatus('Skeleton adjustment is active. Drag a labeled joint; nearby frames blend with the correction.')
+    } else setStatus('Skeleton adjustment is off. Save changes to apply corrections to scoring.')
+  }
   const toggle = () => {
     const media = video.current
     if (!media || !edit) return
+    if (adjustSkeleton) { setStatus('Turn off skeleton adjustment before playing.'); return }
     if (!media.paused) media.pause()
     else { if (media.currentTime < edit.start || media.currentTime >= edit.end) seek(edit.start); void media.play().catch(() => setStatus('Playback failed. Try reselecting the original video.')) }
   }
@@ -225,11 +323,21 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
     if (!edit) return
     setBusy(true)
     if (draftTimer.current) clearTimeout(draftTimer.current)
+    if (correctionDraftTimer.current) clearTimeout(correctionDraftTimer.current)
     try {
       await writes.current.catch(() => undefined)
-      if (mode === 'discard') { await deleteBeatMap(songDraftKey(entry.id)); onClose() }
-      else if (mode === 'draft') { await saveSongDraft(entry.id, edit); onClose() }
-      else { const saved = await saveSongEdit(entry.id, edit); setBaseline(JSON.stringify(saved)); setStatus('Saved. Your visual chart, trim, and lighting are active.'); onSaved() }
+      if (mode === 'discard') { await Promise.all([deleteBeatMap(songDraftKey(entry.id)), deleteBeatMap(correctionDraftKey(entry.id))]); onClose() }
+      else if (mode === 'draft') { await Promise.all([saveSongDraft(entry.id, edit), writeBeatMap(correctionDraftKey(entry.id), corrections)]); onClose() }
+      else {
+        const saved = await saveSongEdit(entry.id, edit)
+        if (storedTrack) await saveTrackCorrections(entry.id, corrections)
+        await deleteBeatMap(correctionDraftKey(entry.id))
+        setBaseline(JSON.stringify(saved))
+        setCorrectionBaseline(JSON.stringify(corrections))
+        setStoredTrack((current) => current ? { ...current, corrections } : current)
+        setStatus('Saved. Visual chart, trim, lighting, and skeleton corrections are active.')
+        onSaved()
+      }
     } catch (error) { setStatus(`Could not save: ${String(error)}. Your edits are still here.`) }
     finally { setBusy(false) }
   }
@@ -239,6 +347,49 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
   }
   const dragging = useRef<{ id: string; time: number } | null>(null)
   const suppressMarkerClick = useRef(false)
+  const draggingJoint = useRef<{
+    pointerId: number
+    frame: number
+    landmarks: number[]
+    track: PoseTrack
+    corrections: PoseCorrection[]
+  } | null>(null)
+  const pointerPosition = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect()
+    return { x: (event.clientX - bounds.left) / bounds.width, y: (event.clientY - bounds.top) / bounds.height }
+  }
+  const beginJointDrag = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!adjustSkeleton || !track) return
+    const point = pointerPosition(event)
+    const frameIndex = correctionFrame()
+    const pose = sampleTrack(track, frameIndex / track.fps)
+    if (!pose) return
+    let nearest: typeof adjustableJoints[number] | null = null
+    let nearestDistance = .04
+    for (const joint of adjustableJoints) {
+      const landmark = pose.landmarks[joint.landmarks[0]]
+      const distance = Math.hypot(landmark.x - point.x, landmark.y - point.y)
+      if (landmark.visibility >= .2 && distance < nearestDistance) { nearest = joint; nearestDistance = distance }
+    }
+    if (!nearest) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setCorrectionUndo((history) => [...history.slice(-79), corrections])
+    setCorrectionRedo([])
+    draggingJoint.current = { pointerId: event.pointerId, frame: frameIndex, landmarks: nearest.landmarks, track, corrections }
+  }
+  const moveJoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = draggingJoint.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    event.preventDefault()
+    const point = pointerPosition(event)
+    showCorrections(brushPoseCorrection(drag.track, drag.corrections, drag.frame, drag.landmarks, point.x, point.y, 3))
+  }
+  const endJointDrag = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (draggingJoint.current?.pointerId !== event.pointerId) return
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    draggingJoint.current = null
+  }
 
   return <div className="song-editor" role="dialog" aria-modal="true" aria-label="Song editor" tabIndex={-1} ref={root} onKeyDown={(event) => {
     event.stopPropagation()
@@ -262,7 +413,7 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
       return
     }
     if (event.code === 'Space' && event.target instanceof HTMLButtonElement) return
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) redoEdit(); else undoEdit() }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); if (adjustSkeleton) { if (event.shiftKey) redoCorrection(); else undoCorrection() } else if (event.shiftKey) redoEdit(); else undoEdit() }
     else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') { event.preventDefault(); duplicate() }
     else if (event.code === 'Space') { event.preventDefault(); toggle() }
     else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); seek(time + (event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? .1 : 1 / 30)) }
@@ -300,13 +451,21 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
             event.currentTarget.playbackRate = rate
             seek(edit.start)
           }} />
-          <canvas ref={overlay} aria-label="Marker preview. Select a marker, then click to move its position." onClick={(event) => {
-            if (!marker) return
+          <canvas ref={overlay} className={adjustSkeleton ? 'is-adjusting' : ''} aria-label={adjustSkeleton ? 'Reference skeleton adjustment canvas. Drag a labeled joint to correct it.' : 'Marker preview. Select a marker, then click to move its position.'} onPointerDown={beginJointDrag} onPointerMove={moveJoint} onPointerUp={endJointDrag} onPointerCancel={endJointDrag} onClick={(event) => {
+            if (adjustSkeleton || !marker) return
             const bounds = event.currentTarget.getBoundingClientRect()
             patchMarker({ x: (event.clientX - bounds.left) / bounds.width, y: (event.clientY - bounds.top) / bounds.height })
           }} />
         </div>
-        <div className="editor-tools"><button onClick={() => seek(time - 1 / 30)}>−1/30s</button><button disabled={!url} onClick={toggle}>{playing ? 'Pause' : 'Play'}</button><button onClick={() => seek(time + 1 / 30)}>+1/30s</button><output>{timeLabel(time)}</output><label>Speed<select value={rate} onChange={(event) => { const value = Number(event.target.value); setRate(value); if (video.current) video.current.playbackRate = value }}>{[.25, .5, .75, 1].map((value) => <option key={value}>{value}</option>)}</select></label><label><input type="checkbox" checked={loop} onChange={(event) => setLoop(event.target.checked)} />Loop trim</label><label><input type="checkbox" checked={autoHit} onChange={(event) => setAutoHit(event.target.checked)} />Auto-hit preview</label><span className="editor-hit-controls" role="group" aria-label="Test marker hits"><b>Test hit</b><button type="button" onClick={() => hitPreviewMarker('head')}>Head</button><button type="button" onClick={() => hitPreviewMarker('hands')}>Hands</button><button type="button" onClick={() => hitPreviewMarker('feet')}>Feet</button></span><span className="editor-skeleton-controls" role="group" aria-label="Reference skeleton visibility"><label><input type="checkbox" checked={showSkeleton} onChange={(event) => setShowSkeleton(event.target.checked)} />Skeleton</label><label><input type="checkbox" checked={showHead} disabled={!showSkeleton} onChange={(event) => setShowHead(event.target.checked)} />Head</label><label><input type="checkbox" checked={showHands} disabled={!showSkeleton} onChange={(event) => setShowHands(event.target.checked)} />Hands</label><label><input type="checkbox" checked={showFeet} disabled={!showSkeleton} onChange={(event) => setShowFeet(event.target.checked)} />Feet</label></span></div>
+        <div className="editor-tools"><button onClick={() => seek(time - 1 / 30)}>−1/30s</button><button disabled={!url || adjustSkeleton} onClick={toggle}>{playing ? 'Pause' : 'Play'}</button><button onClick={() => seek(time + 1 / 30)}>+1/30s</button><output>{timeLabel(time)}</output><label>Speed<select value={rate} onChange={(event) => { const value = Number(event.target.value); setRate(value); if (video.current) video.current.playbackRate = value }}>{[.25, .5, .75, 1].map((value) => <option key={value}>{value}</option>)}</select></label><label><input type="checkbox" checked={loop} onChange={(event) => setLoop(event.target.checked)} />Loop trim</label><label><input type="checkbox" checked={autoHit} onChange={(event) => setAutoHit(event.target.checked)} />Auto-hit preview</label><span className="editor-hit-controls" role="group" aria-label="Test marker hits"><b>Test hit</b><button type="button" onClick={() => hitPreviewMarker('head')}>Head</button><button type="button" onClick={() => hitPreviewMarker('hands')}>Hands</button><button type="button" onClick={() => hitPreviewMarker('feet')}>Feet</button></span><span className="editor-skeleton-controls" role="group" aria-label="Reference skeleton visibility"><label><input type="checkbox" checked={showSkeleton} onChange={(event) => setShowSkeleton(event.target.checked)} />Skeleton</label><label><input type="checkbox" checked={showHead} disabled={!showSkeleton} onChange={(event) => setShowHead(event.target.checked)} />Head</label><label><input type="checkbox" checked={showHands} disabled={!showSkeleton} onChange={(event) => setShowHands(event.target.checked)} />Hands</label><label><input type="checkbox" checked={showFeet} disabled={!showSkeleton} onChange={(event) => setShowFeet(event.target.checked)} />Feet</label></span></div>
+        <div className={`editor-adjust-controls ${adjustSkeleton ? 'active' : ''}`} role="group" aria-label="Skeleton correction controls">
+          <button type="button" className={adjustSkeleton ? 'primary' : ''} disabled={!track} aria-pressed={adjustSkeleton} onClick={toggleAdjustment}>{adjustSkeleton ? 'Finish adjusting' : 'Adjust skeleton'}</button>
+          <button type="button" disabled={!adjustSkeleton || !correctionUndo.length} onClick={undoCorrection}>Undo adjustment</button>
+          <button type="button" disabled={!adjustSkeleton || !correctionRedo.length} onClick={redoCorrection}>Redo adjustment</button>
+          <button type="button" disabled={!adjustSkeleton || !corrections.some((item) => item.frame === correctionFrame())} onClick={() => changeCorrections(corrections.filter((item) => item.frame !== correctionFrame()))}>Reset frame</button>
+          <button type="button" disabled={!adjustSkeleton || !corrections.length} onClick={() => changeCorrections([])}>Reset all</button>
+          <span>{adjustSkeleton ? 'Paused · H head · S shoulder · E elbow · W wrist · H hip · K knee · A ankle · blends ±0.2s' : `${corrections.length} saved or draft landmark adjustments`}</span>
+        </div>
       </section><aside className="editor-inspector">
         <h2>Visual chart</h2><label>Difficulty<select value={level} onChange={(event) => { setLevel(event.target.value as Difficulty); setSelected('') }}>{['easy', 'normal', 'hard'].map((value) => <option key={value}>{value}</option>)}</select></label>
         <p>{edit.charts[level] === undefined ? 'Using generated markers' : 'Custom markers'} · {markers.length} cues</p>

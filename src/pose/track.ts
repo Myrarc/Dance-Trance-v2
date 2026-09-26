@@ -1,5 +1,6 @@
 import { createPoseLandmarker } from './landmarker'
 import type { Landmark3 } from './angles'
+import { applyPoseCorrections, type PoseCorrection } from './poseCorrections'
 
 /**
  * A pose track: the reference dancer's skeleton for a whole video, worked out
@@ -331,12 +332,13 @@ export const unpackTrack = (p: {
   bpm?: number
   beatConfidence?: number
   beats?: ArrayBuffer
+  corrections?: PoseCorrection[]
 }): PoseTrack | null =>
   p.version === TRACK_VERSION || p.version === 3
     ? {
         fps: p.fps,
         frames: p.frames,
-        data: new Float32Array(p.buffer),
+        data: applyPoseCorrections(new Float32Array(p.buffer), p.frames, p.corrections),
         bpm: p.bpm,
         beatConfidence: p.beatConfidence,
         beats: p.beats ? new Float32Array(p.beats) : undefined,

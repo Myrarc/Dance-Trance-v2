@@ -10,6 +10,7 @@
 
 const DB_NAME = 'dance-trainer'
 import type { ArcadeRecord } from '../game/records'
+import type { PoseCorrection } from '../pose/poseCorrections'
 
 const DB_VERSION = 6
 const META_STORE = 'library'
@@ -55,6 +56,7 @@ export interface StoredTrack {
   bpm?: number
   beatConfidence?: number
   beats?: ArrayBuffer
+  corrections?: PoseCorrection[]
 }
 
 export interface LibraryEntry {
@@ -411,6 +413,7 @@ export async function getVideo(id: string): Promise<File | Blob | null> {
 export async function forget(id: string): Promise<void> {
   await deleteBeatMap(`song-edit:${id}`)
   await deleteBeatMap(`song-draft:${id}`)
+  await deleteBeatMap(`pose-correction-draft:${id}`)
   try {
     await tx(BEAT_MAP_STORE, 'readwrite', (s) => s.delete(`song:${id}`))
     await tx(TRACK_STORE, 'readwrite', (s) => s.delete(id))
@@ -431,6 +434,12 @@ export async function writeBeatMap(id: string, value: unknown): Promise<void> {
 
 export async function deleteBeatMap(id: string): Promise<void> {
   await mutateBeatMap((store) => store.delete(id))
+}
+
+export async function saveTrackCorrections(id: string, corrections: PoseCorrection[]): Promise<void> {
+  const existing = await tx<StoredTrack | undefined>(TRACK_STORE, 'readonly', (s) => s.get(id))
+  if (!existing) throw new Error('Reference analysis is not available.')
+  await tx(TRACK_STORE, 'readwrite', (s) => s.put({ ...existing, corrections }, id))
 }
 
 /** Commit visual edits and their lighting together; a draft never affects playback. */
