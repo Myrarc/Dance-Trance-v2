@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getTrack, getVideo, type LibraryEntry } from '../lib/library'
 import { buildCueChart, type CueEvent } from '../pose/hitTargets'
 import { cueColor, drawArcadeHitLabel, drawArcadeHitMarker, drawCueGlyph } from '../pose/arcade'
-import { KIOSK_PLAY_MS, KIOSK_TITLE_MS, kioskFrame } from '../game/kiosk'
+import { KIOSK_PLAY_MS, KIOSK_TITLE_MS, kioskFrame, kioskSongOrder } from '../game/kiosk'
 import { L } from '../i18n'
 
 interface Demo { url: string; name: string; cues: CueEvent[] }
@@ -14,13 +14,12 @@ export default function AttractKiosk({ library, reducedEffects, onPlayingChange 
 }) {
   const [demo, setDemo] = useState<Demo | null>(null)
   const [cycle, setCycle] = useState(0)
-  const nextSong = useRef(0)
+  const previousSong = useRef<string | null>(null)
   useEffect(() => {
     let cancelled = false
     let url: string | null = null
     const timer = window.setTimeout(async () => {
-      for (let attempt = 0; attempt < library.length; attempt++) {
-        const entry = library[nextSong.current++ % library.length]
+      for (const entry of kioskSongOrder(library, previousSong.current)) {
         try {
           const [video, stored] = await Promise.all([getVideo(entry.id), getTrack(entry.id)])
           if (cancelled) return
@@ -31,6 +30,7 @@ export default function AttractKiosk({ library, reducedEffects, onPlayingChange 
           const cues = buildCueChart(track, 'normal', false, 'full')
           if (!cues.length) continue
           url = URL.createObjectURL(video)
+          previousSong.current = entry.id
           setDemo({ url, name: entry.name, cues })
           return
         } catch { /* An unavailable local file should not interrupt the welcome screen. */ }
