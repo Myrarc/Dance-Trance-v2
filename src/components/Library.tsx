@@ -47,7 +47,7 @@ export default function Library({ intent = 'play', entries, stats, records = [],
   }
 
   return (
-    <><ul className="library" aria-label={intent === 'edit' ? 'Songs to edit' : 'Song library'}>
+    <><ul className={`library${intent === 'edit' ? ' library-edit-list' : ''}`} aria-label={intent === 'edit' ? 'Songs to edit' : 'Song library'}>
       {entries.map((entry) => {
         const s = stats.get(entry.id)
         const best = bestByVideo.get(entry.id)

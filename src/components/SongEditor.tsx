@@ -3,14 +3,18 @@ import { fingerprint, getTrack, getVideo, remember, deleteBeatMap, type LibraryE
 import { loadBeatMap, beatGlowAt, type BeatKind, type BeatMark } from '../lib/beatMaps'
 import { loadSongEdit, saveSongDraft, saveSongEdit, songDraftKey, markerFromCue, visualCues, type SongEdit, type VisualMarker } from '../lib/songEdits'
 import { buildCueChart, HIT_LEAD_S, type Difficulty, type HitJoint } from '../pose/hitTargets'
-import { unpackTrack, type PoseTrack } from '../pose/track'
+import { sampleTrack, unpackTrack, type PoseTrack } from '../pose/track'
 import { cueColor, drawArcadeHitMarker, drawArcadeHitLabel, drawCueGlyph } from '../pose/arcade'
+import { drawSkeleton, SIDE_COLORS } from '../pose/skeleton'
 import { editorWaveform } from '../lib/editorWaveform'
 import './SongEditor.css'
 
 const timeLabel = (time: number) => `${Math.floor(time / 60)}:${(time % 60).toFixed(3).padStart(6, '0')}`
 const joints: HitJoint[] = ['leftHand', 'rightHand', 'leftFoot', 'rightFoot', 'head']
 const jointLabel = (joint: string) => joint.replace(/([A-Z])/g, ' $1').toLowerCase()
+const HEAD_LANDMARKS = new Set([0, 7, 8])
+const HAND_LANDMARKS = new Set([13, 14, 15, 16])
+const FOOT_LANDMARKS = new Set([25, 26, 27, 28, 31, 32])
 function lightsFor(edit: SongEdit): BeatMark[] {
   const map = edit.lighting
   if (!map) return []
@@ -38,6 +42,10 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
   const [offset, setOffset] = useState(0)
   const [loop, setLoop] = useState(false)
   const [autoHit, setAutoHit] = useState(true)
+  const [showSkeleton, setShowSkeleton] = useState(true)
+  const [showHead, setShowHead] = useState(true)
+  const [showHands, setShowHands] = useState(true)
+  const [showFeet, setShowFeet] = useState(true)
   const [peaks, setPeaks] = useState<number[]>([])
   const [status, setStatus] = useState('Opening local song…')
   const [waveStatus, setWaveStatus] = useState('')
@@ -131,6 +139,22 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
       const ctx = canvas.getContext('2d')!
       const radius = Math.max(28, canvas.height * 0.052)
       const reduced = reducedEffects || matchMedia('(prefers-reduced-motion: reduce)').matches
+      const pose = showSkeleton && track ? sampleTrack(track, media.currentTime) : null
+      if (pose) {
+        const landmarks = pose.landmarks.map((landmark, index) => ({
+          ...landmark,
+          visibility: (!showHead && HEAD_LANDMARKS.has(index))
+            || (!showHands && HAND_LANDMARKS.has(index))
+            || (!showFeet && FOOT_LANDMARKS.has(index))
+            ? 0
+            : landmark.visibility,
+        }))
+        drawSkeleton(ctx, landmarks, canvas.width, canvas.height, {
+          lineWidth: Math.max(4, canvas.height * .008),
+          sideColors: SIDE_COLORS,
+          glow: !reduced,
+        })
+      }
       for (const cue of cues) {
         if (cue.time < media.currentTime - 0.45 || cue.time > media.currentTime + HIT_LEAD_S) continue
         const x = cue.x * canvas.width, y = cue.y * canvas.height
@@ -152,7 +176,7 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
     }
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [edit, level, markers, marker, loop, autoHit, reducedEffects, url])
+  }, [edit, level, markers, marker, loop, autoHit, showSkeleton, showHead, showHands, showFeet, track, reducedEffects, url])
 
   const change = (next: SongEdit) => { if (edit) setUndo((history) => [...history.slice(-79), edit]); setRedo([]); setEdit(next) }
   const seek = (next: number) => { if (video.current && edit) { video.current.currentTime = Math.max(0, Math.min(edit.duration, next)); setTime(video.current.currentTime) } }
@@ -271,7 +295,7 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
             patchMarker({ x: (event.clientX - bounds.left) / bounds.width, y: (event.clientY - bounds.top) / bounds.height })
           }} />
         </div>
-        <div className="editor-tools"><button onClick={() => seek(time - 1 / 30)}>−1/30s</button><button disabled={!url} onClick={toggle}>{playing ? 'Pause' : 'Play'}</button><button onClick={() => seek(time + 1 / 30)}>+1/30s</button><output>{timeLabel(time)}</output><label>Speed<select value={rate} onChange={(event) => { const value = Number(event.target.value); setRate(value); if (video.current) video.current.playbackRate = value }}>{[.25, .5, .75, 1].map((value) => <option key={value}>{value}</option>)}</select></label><label><input type="checkbox" checked={loop} onChange={(event) => setLoop(event.target.checked)} />Loop trim</label><label><input type="checkbox" checked={autoHit} onChange={(event) => setAutoHit(event.target.checked)} />Auto-hit preview</label></div>
+        <div className="editor-tools"><button onClick={() => seek(time - 1 / 30)}>−1/30s</button><button disabled={!url} onClick={toggle}>{playing ? 'Pause' : 'Play'}</button><button onClick={() => seek(time + 1 / 30)}>+1/30s</button><output>{timeLabel(time)}</output><label>Speed<select value={rate} onChange={(event) => { const value = Number(event.target.value); setRate(value); if (video.current) video.current.playbackRate = value }}>{[.25, .5, .75, 1].map((value) => <option key={value}>{value}</option>)}</select></label><label><input type="checkbox" checked={loop} onChange={(event) => setLoop(event.target.checked)} />Loop trim</label><label><input type="checkbox" checked={autoHit} onChange={(event) => setAutoHit(event.target.checked)} />Auto-hit preview</label><span className="editor-skeleton-controls" role="group" aria-label="Reference skeleton visibility"><label><input type="checkbox" checked={showSkeleton} onChange={(event) => setShowSkeleton(event.target.checked)} />Skeleton</label><label><input type="checkbox" checked={showHead} disabled={!showSkeleton} onChange={(event) => setShowHead(event.target.checked)} />Head</label><label><input type="checkbox" checked={showHands} disabled={!showSkeleton} onChange={(event) => setShowHands(event.target.checked)} />Hands</label><label><input type="checkbox" checked={showFeet} disabled={!showSkeleton} onChange={(event) => setShowFeet(event.target.checked)} />Feet</label></span></div>
       </section><aside className="editor-inspector">
         <h2>Visual chart</h2><label>Difficulty<select value={level} onChange={(event) => { setLevel(event.target.value as Difficulty); setSelected('') }}>{['easy', 'normal', 'hard'].map((value) => <option key={value}>{value}</option>)}</select></label>
         <p>{edit.charts[level] === undefined ? 'Using generated markers' : 'Custom markers'} · {markers.length} cues</p>
