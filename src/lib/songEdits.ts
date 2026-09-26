@@ -81,6 +81,11 @@ export function visualCues(edit: SongEdit | null | undefined, generated: CueEven
       (focus === 'full' || (focus === 'upper' ? !cue.joint.endsWith('Foot') : cue.joint.endsWith('Foot')))))
     .sort((a, b) => a.time - b.time)
 }
+export type PreviewPart = 'head' | 'hands' | 'feet'
+export const cuePreviewPart = (cue: CueEvent): PreviewPart => cue.kind === 'clap' || cue.joint.endsWith('Hand') ? 'hands' : cue.joint.endsWith('Foot') ? 'feet' : 'head'
+export function filterPreviewCues(cues: CueEvent[], visible: Record<PreviewPart, boolean>) {
+  return cues.filter((cue) => visible[cuePreviewPart(cue)])
+}
 export const isTrimmed = (edit: SongEdit | null) => !!edit && (edit.start > 0.01 || edit.end < edit.duration - 0.01)
 export function withinTrim<T extends { start: number; end: number }>(intervals: T[], edit?: Pick<SongEdit, 'start' | 'end'> | null): T[] {
   return edit ? intervals.filter((interval) => interval.start >= edit.start && interval.end <= edit.end) : intervals

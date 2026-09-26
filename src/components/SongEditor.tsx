@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fingerprint, getTrack, getVideo, remember, deleteBeatMap, readBeatMap, saveTrackCorrections, writeBeatMap, type LibraryEntry, type StoredTrack } from '../lib/library'
 import { loadBeatMap, beatGlowAt, type BeatKind, type BeatMark } from '../lib/beatMaps'
-import { loadSongEdit, saveSongDraft, saveSongEdit, songDraftKey, markerFromCue, visualCues, type SongEdit, type VisualMarker } from '../lib/songEdits'
+import { cuePreviewPart, filterPreviewCues, loadSongEdit, saveSongDraft, saveSongEdit, songDraftKey, markerFromCue, visualCues, type PreviewPart, type SongEdit, type VisualMarker } from '../lib/songEdits'
 import { buildCueChart, HIT_LEAD_S, type CueEvent, type Difficulty, type HitJoint } from '../pose/hitTargets'
 import { sampleTrack, unpackTrack, type PoseTrack } from '../pose/track'
 import { cueColor, drawArcadeHitMarker, drawArcadeHitLabel, drawCueGlyph } from '../pose/arcade'
@@ -16,8 +16,6 @@ const jointLabel = (joint: string) => joint.replace(/([A-Z])/g, ' $1').toLowerCa
 const HEAD_LANDMARKS = new Set([0, 7, 8])
 const HAND_LANDMARKS = new Set([13, 14, 15, 16])
 const FOOT_LANDMARKS = new Set([25, 26, 27, 28, 31, 32])
-type PreviewPart = 'head' | 'hands' | 'feet'
-const cuePart = (cue: CueEvent): PreviewPart => cue.kind === 'clap' || cue.joint.endsWith('Hand') ? 'hands' : cue.joint.endsWith('Foot') ? 'feet' : 'head'
 const cueKey = (cue: CueEvent) => `${cue.kind}:${cue.kind === 'clap' ? 'hands' : cue.joint}:${cue.time.toFixed(4)}`
 const correctionDraftKey = (id: string) => `pose-correction-draft:${id}`
 const adjustableJoints = [
@@ -92,8 +90,10 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
   const generated = useMemo(() => track ? buildCueChart(track, level, true, 'full').map((cue, index) => markerFromCue(cue, `generated-${level}-${index}`)) : [], [track, level])
   const markers = edit?.charts[level] ?? generated
   const cues = useMemo(() => edit ? visualCues({ ...edit, charts: { ...edit.charts, [level]: markers } }, [], level, 'full', true) : [], [edit, level, markers])
+  const visibleCues = useMemo(() => filterPreviewCues(cues, { head: showHead, hands: showHands, feet: showFeet }), [cues, showHead, showHands, showFeet])
   const lights = useMemo(() => edit ? lightsFor(edit) : [], [edit])
   const marker = markers.find((item) => item.id === selected)
+  const markerVisible = !!marker && (marker.kind === 'clap' || marker.joint.endsWith('Hand') ? showHands : marker.joint.endsWith('Foot') ? showFeet : showHead)
   const lightIndex = selected.startsWith('light:') ? Number(selected.slice(6)) : -1
   const light = lights[lightIndex]
 
@@ -220,14 +220,14 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
         }
       }
       if (!adjustSkeleton) {
-        for (const cue of cues) {
+        for (const cue of visibleCues) {
           if (cue.time < media.currentTime - 0.45 || cue.time > media.currentTime + HIT_LEAD_S) continue
           const x = cue.x * canvas.width, y = cue.y * canvas.height
           drawArcadeHitMarker(ctx, x, y, radius, cueColor(cue), cue.time - media.currentTime, reduced)
           drawCueGlyph(ctx, cue, x, y, radius, media.currentTime)
           if ((autoHit && cue.time <= media.currentTime) || (previewHit?.key === cueKey(cue) && now <= previewHit.expiresAt)) drawArcadeHitLabel(ctx, x, y, radius, 'perfect')
         }
-        if (marker) {
+        if (marker && markerVisible) {
           ctx.strokeStyle = '#fff'; ctx.lineWidth = 4
           ctx.strokeRect(marker.x * canvas.width - radius, marker.y * canvas.height - radius, radius * 2, radius * 2)
         }
@@ -242,7 +242,7 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
     }
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [edit, cues, marker, loop, autoHit, previewHit, showSkeleton, showHead, showHands, showFeet, adjustSkeleton, track, reducedEffects, url])
+  }, [edit, visibleCues, marker, markerVisible, loop, autoHit, previewHit, showSkeleton, showHead, showHands, showFeet, adjustSkeleton, track, reducedEffects, url])
 
   const change = (next: SongEdit) => { if (edit) setUndo((history) => [...history.slice(-79), edit]); setRedo([]); setEdit(next) }
   const seek = (next: number) => { if (video.current && edit) { video.current.currentTime = Math.max(0, Math.min(edit.duration, next)); setTime(video.current.currentTime) } }
@@ -314,7 +314,7 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
   }
   const hitPreviewMarker = (part: PreviewPart) => {
     const currentTime = video.current?.currentTime ?? time
-    const cue = cues.filter((item) => cuePart(item) === part && item.time >= currentTime - .45 && item.time <= currentTime + HIT_LEAD_S)
+    const cue = visibleCues.filter((item) => cuePreviewPart(item) === part && item.time >= currentTime - .45 && item.time <= currentTime + HIT_LEAD_S)
       .sort((a, b) => Math.abs(a.time - currentTime) - Math.abs(b.time - currentTime))[0]
     if (!cue) { setStatus(`No ${part} marker is close to the playhead.`); return }
     setPreviewHit({ key: cueKey(cue), expiresAt: performance.now() + 700 })
@@ -457,7 +457,7 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
             patchMarker({ x: (event.clientX - bounds.left) / bounds.width, y: (event.clientY - bounds.top) / bounds.height })
           }} />
         </div>
-        <div className="editor-tools"><button onClick={() => seek(time - 1 / 30)}>−1/30s</button><button disabled={!url || adjustSkeleton} onClick={toggle}>{playing ? 'Pause' : 'Play'}</button><button onClick={() => seek(time + 1 / 30)}>+1/30s</button><output>{timeLabel(time)}</output><label>Speed<select value={rate} onChange={(event) => { const value = Number(event.target.value); setRate(value); if (video.current) video.current.playbackRate = value }}>{[.25, .5, .75, 1].map((value) => <option key={value}>{value}</option>)}</select></label><label><input type="checkbox" checked={loop} onChange={(event) => setLoop(event.target.checked)} />Loop trim</label><label><input type="checkbox" checked={autoHit} onChange={(event) => setAutoHit(event.target.checked)} />Auto-hit preview</label><span className="editor-hit-controls" role="group" aria-label="Test marker hits"><b>Test hit</b><button type="button" onClick={() => hitPreviewMarker('head')}>Head</button><button type="button" onClick={() => hitPreviewMarker('hands')}>Hands</button><button type="button" onClick={() => hitPreviewMarker('feet')}>Feet</button></span><span className="editor-skeleton-controls" role="group" aria-label="Reference skeleton visibility"><label><input type="checkbox" checked={showSkeleton} onChange={(event) => setShowSkeleton(event.target.checked)} />Skeleton</label><label><input type="checkbox" checked={showHead} disabled={!showSkeleton} onChange={(event) => setShowHead(event.target.checked)} />Head</label><label><input type="checkbox" checked={showHands} disabled={!showSkeleton} onChange={(event) => setShowHands(event.target.checked)} />Hands</label><label><input type="checkbox" checked={showFeet} disabled={!showSkeleton} onChange={(event) => setShowFeet(event.target.checked)} />Feet</label></span></div>
+        <div className="editor-tools"><button onClick={() => seek(time - 1 / 30)}>−1/30s</button><button disabled={!url || adjustSkeleton} onClick={toggle}>{playing ? 'Pause' : 'Play'}</button><button onClick={() => seek(time + 1 / 30)}>+1/30s</button><output>{timeLabel(time)}</output><label>Speed<select value={rate} onChange={(event) => { const value = Number(event.target.value); setRate(value); if (video.current) video.current.playbackRate = value }}>{[.25, .5, .75, 1].map((value) => <option key={value}>{value}</option>)}</select></label><label><input type="checkbox" checked={loop} onChange={(event) => setLoop(event.target.checked)} />Loop trim</label><label><input type="checkbox" checked={autoHit} onChange={(event) => setAutoHit(event.target.checked)} />Auto-hit preview</label><span className="editor-hit-controls" role="group" aria-label="Test marker hits"><b>Test hit</b><button type="button" disabled={!showHead} onClick={() => hitPreviewMarker('head')}>Head</button><button type="button" disabled={!showHands} onClick={() => hitPreviewMarker('hands')}>Hands</button><button type="button" disabled={!showFeet} onClick={() => hitPreviewMarker('feet')}>Feet</button></span><span className="editor-skeleton-controls" role="group" aria-label="Preview visibility"><b>Show</b><label><input type="checkbox" checked={showSkeleton} onChange={(event) => setShowSkeleton(event.target.checked)} />Skeleton</label><label><input type="checkbox" checked={showHead} onChange={(event) => setShowHead(event.target.checked)} />Head</label><label><input type="checkbox" checked={showHands} onChange={(event) => setShowHands(event.target.checked)} />Hands</label><label><input type="checkbox" checked={showFeet} onChange={(event) => setShowFeet(event.target.checked)} />Feet</label></span></div>
         <div className={`editor-adjust-controls ${adjustSkeleton ? 'active' : ''}`} role="group" aria-label="Skeleton correction controls">
           <button type="button" className={adjustSkeleton ? 'primary' : ''} disabled={!track} aria-pressed={adjustSkeleton} onClick={toggleAdjustment}>{adjustSkeleton ? 'Finish adjusting' : 'Adjust skeleton'}</button>
           <button type="button" disabled={!adjustSkeleton || !correctionUndo.length} onClick={undoCorrection}>Undo adjustment</button>

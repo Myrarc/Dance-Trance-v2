@@ -17,7 +17,7 @@
 .editor-hit-controls b { font-size: 13px; }
 .song-editor .editor-hit-controls button { padding: 6px 9px; background: #2cb8ba; }
 .editor-skeleton-controls { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 9px; border: 2px solid #30213f; border-radius: 5px; background: #fff7e0; }
-.editor-skeleton-controls label:first-child { padding-right: 8px; border-right: 2px solid #30213f; }
+.editor-skeleton-controls b { padding-right: 8px; border-right: 2px solid #30213f; font-size: 13px; }
 .editor-skeleton-controls label:has(input:disabled) { opacity: .5; }
 .editor-adjust-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: -4px 0 12px; padding: 8px; border: 2px solid #30213f; border-radius: 6px; background: #fff7e0; }
 .editor-adjust-controls.active { background: #bfe9df; box-shadow: 5px 5px 0 #30213f; }

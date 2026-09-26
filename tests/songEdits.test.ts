@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import 'fake-indexeddb/auto'
-import { loadSongEdit, saveSongDraft, saveSongEdit, validateSongEdit, visualCues, withinTrim, type SongEdit } from '../src/lib/songEdits.ts'
+import { filterPreviewCues, loadSongEdit, saveSongDraft, saveSongEdit, validateSongEdit, visualCues, withinTrim, type SongEdit } from '../src/lib/songEdits.ts'
 import { forget } from '../src/lib/library.ts'
 import { loadBeatMap, songBeatKey } from '../src/lib/beatMaps.ts'
+import type { CueEvent } from '../src/pose/hitTargets.ts'
 
 const edit: SongEdit = { version: 1, duration: 60, start: 10, end: 40, lighting: { marks: [{ time: 12, kind: 'burst' }] }, charts: {
   normal: [{ id: 'a', time: 12, kind: 'hold', joint: 'leftHand', duration: 1, x: 0.3, y: 0.4 },
@@ -29,6 +30,20 @@ test('visual edits respect focus and original timestamps, with an empty chart de
   assert.equal(visualCues(edit, [], 'normal', 'lower', true)[0].time, 15)
   assert.deepEqual(visualCues({ ...edit, charts: { easy: [] } }, all, 'easy', 'full', true), [])
   assert.deepEqual(visualCues(edit, all, 'hard', 'full', true), all)
+})
+
+test('editor preview visibility independently hides head, hand, and foot markers', () => {
+  const base = { time: 1, poseTime: 1, x: .5, y: .5, confidence: 1, feature: {} }
+  const cues: CueEvent[] = [
+    { ...base, kind: 'spot', joint: 'head' },
+    { ...base, kind: 'spot', joint: 'leftHand' },
+    { ...base, kind: 'spot', joint: 'leftFoot' },
+    { ...base, kind: 'clap', expectedGap: 0 },
+  ]
+  const names = (filtered: CueEvent[]) => filtered.map((cue) => cue.kind === 'clap' ? 'clap' : cue.joint)
+  assert.deepEqual(names(filterPreviewCues(cues, { head: false, hands: true, feet: true })), ['leftHand', 'leftFoot', 'clap'])
+  assert.deepEqual(names(filterPreviewCues(cues, { head: true, hands: false, feet: true })), ['head', 'leftFoot'])
+  assert.deepEqual(names(filterPreviewCues(cues, { head: true, hands: true, feet: false })), ['head', 'leftHand', 'clap'])
 })
 test('trimming excludes outside scoring intervals without changing their evidence or timestamps', () => {
   const intervals = [{ start: 9.5, end: 10 }, { start: 10, end: 10.5 }, { start: 40, end: 40.5 }]
