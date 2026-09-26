@@ -2893,8 +2893,9 @@ input[type='range'] { accent-color: var(--accent); }
 .picker-heading p { margin: 8px 0 0; font-size: clamp(18px, 1.5vw, 26px); font-weight: 800; }
 .picker-stage { position: relative; width: 100%; min-width: 0; }
 .song-carousel { --carousel-step: clamp(280px, 31vw, 440px); position: relative; width: 100%; height: clamp(410px, 31vw, 450px); overflow: hidden; }
-.track-picker .song-carousel { --carousel-step: clamp(370px, 31vw, 1150px); height: clamp(460px, 48dvh, 950px); }
+.track-picker .song-carousel { --carousel-step: clamp(370px, 31vw, 1150px); height: max(clamp(460px, 48dvh, 950px), calc(15.2vw + 260px)); }
 .track-picker .song-card { width: clamp(340px, 27vw, 1020px); min-height: clamp(350px, 38dvh, 850px); }
+.track-picker .song-card strong { height: 3.15em; }
 .song-card {
   --shift: 0px;
   position: absolute;
@@ -3051,7 +3052,7 @@ input[type='range'] { accent-color: var(--accent); }
   .home-carousel { height: 365px; }
   .home-card { height: 310px; }
   .track-picker { gap: 12px; padding-block: 14px; }
-  .track-picker .song-carousel { height: 390px; }
+  .track-picker .song-carousel { height: max(390px, calc(15.2vw + 260px)); }
   .track-picker .song-card { min-height: 300px; }
   .difficulty-screen { gap: 10px; min-height: calc(100dvh - 90px); padding-block: 10px; }
   .difficulty-heading h1 { font-size: clamp(42px, 4.4vw, 58px); }
