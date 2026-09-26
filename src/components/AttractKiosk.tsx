@@ -4,8 +4,9 @@ import { buildCueChart, type CueEvent } from '../pose/hitTargets'
 import { cueColor, drawArcadeHitLabel, drawArcadeHitMarker, drawCueGlyph } from '../pose/arcade'
 import { KIOSK_PLAY_MS, KIOSK_TITLE_MS, kioskFrame, kioskSongOrder } from '../game/kiosk'
 import { L } from '../i18n'
+import { loadSongEdit, visualCues } from '../lib/songEdits'
 
-interface Demo { url: string; name: string; cues: CueEvent[] }
+interface Demo { url: string; name: string; cues: CueEvent[]; start: number; end: number }
 
 export default function AttractKiosk({ library, reducedEffects, onPlayingChange }: {
   library: LibraryEntry[]
@@ -23,17 +24,17 @@ export default function AttractKiosk({ library, reducedEffects, onPlayingChange 
     const timer = window.setTimeout(async () => {
       for (const entry of kioskSongOrder(libraryRef.current, previousSong.current)) {
         try {
-          const [video, stored] = await Promise.all([getVideo(entry.id), getTrack(entry.id)])
+          const [video, stored, edit] = await Promise.all([getVideo(entry.id), getTrack(entry.id), loadSongEdit(entry.id)])
           if (cancelled) return
           const { unpackTrack } = await import('../pose/track')
           if (cancelled) return
           const track = stored && unpackTrack(stored)
           if (!video || !track) continue
-          const cues = buildCueChart(track, 'normal', false, 'full')
-          if (!cues.length) continue
+          const cues = visualCues(edit, buildCueChart(track, 'normal', false, 'full'), 'normal', 'full', false)
+          if (!cues.length && edit?.charts.normal === undefined) continue
           url = URL.createObjectURL(video)
           previousSong.current = entry.id
-          setDemo({ url, name: entry.name, cues })
+          setDemo({ url, name: entry.name, cues, start: edit?.start ?? 0, end: edit?.end ?? entry.duration })
           return
         } catch { /* An unavailable local file should not interrupt the welcome screen. */ }
       }
@@ -86,8 +87,9 @@ function KioskPlayback({ demo, reducedEffects, onFinish }: { demo: Demo; reduced
         canvas.height = video.videoHeight
       }
       ctx.clearRect(0, 0, canvas.width, canvas.height)
+      if (video.currentTime >= demo.end || video.currentTime < demo.start) video.currentTime = startRef.current
       const time = video.currentTime
-      if (time < lastTime - 0.5) { loopHits += lastHits; startRef.current = 0 }
+      if (time < lastTime - 0.5) loopHits += lastHits
       const state = kioskFrame(demo.cues, time, startRef.current)
       lastTime = time
       lastHits = state.hits
@@ -113,8 +115,7 @@ function KioskPlayback({ demo, reducedEffects, onFinish }: { demo: Demo; reduced
   return <section className="kiosk-demo" aria-label={L('Arcade demonstration', '街机演示')}>
     <video ref={videoRef} src={demo.url} playsInline loop onError={() => finishRef.current()} onLoadedMetadata={(event) => {
       const video = event.currentTarget
-      startRef.current = Math.min(demo.cues[0]?.time ?? 0, Math.max(0, video.duration - 30))
-      startRef.current = Math.max(0, startRef.current - 1)
+      startRef.current = Math.max(demo.start, Math.min(demo.cues[0]?.time ?? demo.start, Math.max(demo.start, demo.end - 30)) - 1)
       video.currentTime = startRef.current
       video.volume = 0.55
       void video.play().catch(() => {

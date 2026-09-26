@@ -8,6 +8,7 @@ import BeatLab from './components/BeatLab'
 import UpdateToast from './components/UpdateToast'
 import AttractKiosk from './components/AttractKiosk'
 import { createAnalysisQueue } from './lib/analysisQueue'
+import { loadSongEdit, isTrimmed, type SongEdit } from './lib/songEdits'
 import { Brand, HomeScreen, PauseOverlay, ResultsScreen, SettingsScreen, type ResultRecord } from './components/GameShell'
 import { T, L, useLangTick, getLang, setLang } from './i18n'
 import { LEVEL_COLORS, SIDE_COLORS } from './pose/skeleton'
@@ -40,6 +41,7 @@ import { composeResultPhoto } from './lib/resultPhotoImage'
 import { saveResultPhoto } from './lib/resultPhotos'
 
 const VideoPanel = lazy(() => import('./components/VideoPanel'))
+const SongEditor = lazy(() => import('./components/SongEditor'))
 const WebcamPanel = lazy(() => import('./components/WebcamPanel'))
 
 const DIFFICULTIES: Difficulty[] = ['easy', 'normal', 'hard']
@@ -77,6 +79,11 @@ export default function App() {
   const [recordSyncError, setRecordSyncError] = useState(false)
   const [stats, setStats] = useState<Map<string, VideoStats>>(new Map())
   const [current, setCurrent] = useState<LibraryEntry | null>(null)
+  const [editingSong, setEditingSong] = useState<LibraryEntry | null>(null)
+  const [editRevision, setEditRevision] = useState(0)
+  const [songEditState, setSongEditState] = useState<{ id: string | null; edit: SongEdit | null }>({ id: null, edit: null })
+  const songEdit = songEditState.id === current?.id ? songEditState.edit : null
+  const songEditReady = songEditState.id === (current?.id ?? null)
   const [focus, setFocus] = useState<Focus>('full')
   const [track, setTrack] = useState<PoseTrack | null>(null)
   const [preparation, setPreparation] = useState<Record<string, { name: string; progress: number | null; error?: string }>>({})
@@ -107,7 +114,7 @@ export default function App() {
   const [carouselMotion, setCarouselMotion] = useState<{ direction: 'left' | 'right'; turn: number } | null>(null)
   const [homeSelected, setHomeSelected] = useState(0)
   const [homeMotion, setHomeMotion] = useState<{ direction: 'left' | 'right'; turn: number } | null>(null)
-  const [previewSrc, setPreviewSrc] = useState<{ id: string; url: string } | null>(null)
+  const [previewSrc, setPreviewSrc] = useState<{ id: string; url: string; edit: SongEdit | null } | null>(null)
   const [previewPaused, setPreviewPaused] = useState(false)
   const [beatLabOpen, setBeatLabOpen] = useState(false)
   const [diagnosticRequested, setDiagnosticRequested] = useState(false)
@@ -252,6 +259,13 @@ export default function App() {
   const currentId = current?.id ?? null
   useEffect(() => {
     let cancelled = false
+    if (!currentId) { setSongEditState({ id: null, edit: null }); return }
+    void loadSongEdit(currentId).then((edit) => { if (!cancelled) setSongEditState({ id: currentId, edit }) })
+      .catch((error) => { if (!cancelled) setImportMessage(`Could not load saved song edits: ${String(error)}`) })
+    return () => { cancelled = true }
+  }, [currentId, editRevision])
+  useEffect(() => {
+    let cancelled = false
     setTrack(null)
     if (!currentId) return
     void getTrack(currentId).then(async (stored) => {
@@ -307,13 +321,13 @@ export default function App() {
     if (!previewId) return
     let cancelled = false
     let url: string | null = null
-    void getVideo(previewId).then((blob) => {
+    void Promise.all([getVideo(previewId), loadSongEdit(previewId)]).then(([blob, edit]) => {
       if (!blob || cancelled) return
       url = URL.createObjectURL(blob)
-      setPreviewSrc({ id: previewId, url })
-    })
+      setPreviewSrc({ id: previewId, url, edit })
+    }).catch((error) => setImportMessage(`Could not open song preview: ${String(error)}`))
     return () => { cancelled = true; if (url) URL.revokeObjectURL(url) }
-  }, [previewId])
+  }, [previewId, editRevision])
 
   useEffect(() => setFilePickerNotice(false), [navigation.screen, arcadePhase])
 
@@ -360,7 +374,7 @@ export default function App() {
   }, [arcadePhase, gameRun, settings.soundMuted])
 
   useEffect(() => {
-    if (activeScreen !== 'arcade' || arcadePhase !== 'setup' || choosingScoreFocus || choosingDifficulty || !src || !track || !cameraRunning || !lobby.ready || lobby.players < registrationPlayers) return
+    if (editingSong || !songEditReady || activeScreen !== 'arcade' || arcadePhase !== 'setup' || choosingScoreFocus || choosingDifficulty || !src || !track || !cameraRunning || !lobby.ready || lobby.players < registrationPlayers) return
     const timer = window.setTimeout(() => {
       setGamePlayers([])
       setResultRecords([])
@@ -369,7 +383,7 @@ export default function App() {
       dispatch({ type: 'startCountdown' })
     }, 1400)
     return () => clearTimeout(timer)
-  }, [activeScreen, arcadePhase, choosingScoreFocus, choosingDifficulty, src, track, cameraRunning, lobby.ready, lobby.players, registrationPlayers])
+  }, [activeScreen, arcadePhase, choosingScoreFocus, choosingDifficulty, src, track, cameraRunning, lobby.ready, lobby.players, registrationPlayers, editingSong, songEditReady])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -382,7 +396,7 @@ export default function App() {
   }, [activeScreen, arcadePhase, navigation.screen])
 
   const startRound = () => {
-    if (!track || !cameraRunning || !lobby.ready || lobby.players < registrationPlayers) return
+    if (!songEditReady || !track || !cameraRunning || !lobby.ready || lobby.players < registrationPlayers) return
     setGamePlayers([])
     setResultRecords([])
     comboMilestonesRef.current = []
@@ -399,7 +413,7 @@ export default function App() {
     const outcomes: (ResultRecord | null)[] = []
     for (let index = 0; index < gamePlayers.length; index++) {
       const player = gamePlayers[index]
-      if (!recordEligible(player)) {
+      if (isTrimmed(songEdit) || !recordEligible(player)) {
         outcomes.push(null)
         continue
       }
@@ -626,7 +640,7 @@ export default function App() {
   }
 
   const pickingSong = !src && navigation.screen !== 'settings' && (activeScreen === 'arcade' || activeScreen === 'practice')
-  const menuMusicActive = !kioskPlaying && !beatLabOpen && !pickingSong && (navigation.screen === 'attract' || !src || (activeScreen === 'arcade' && arcadePhase === 'results') || (activeScreen !== 'arcade' && activeScreen !== 'practice'))
+  const menuMusicActive = !editingSong && !kioskPlaying && !beatLabOpen && !pickingSong && (navigation.screen === 'attract' || !src || (activeScreen === 'arcade' && arcadePhase === 'results') || (activeScreen !== 'arcade' && activeScreen !== 'practice'))
   const choicePreviewActive = activeScreen === 'arcade' && arcadePhase === 'setup' && !!src && (choosingScoreFocus || choosingDifficulty)
   const menuTheme = MENU_THEMES.find((theme) => theme.id === settings.menuTheme)
   useEffect(() => {
@@ -841,7 +855,7 @@ export default function App() {
     else if (homeSelected === 3) go('openSettings')
     else dispatch({ type: 'wake' })
   }
-  const gestureContext: GestureContext | null = !beatLabOpen && lobby.ready && navigation.screen !== 'tracking' &&
+  const gestureContext: GestureContext | null = !editingSong && !beatLabOpen && lobby.ready && navigation.screen !== 'tracking' &&
     navigation.screen !== 'attract' && !(activeScreen === 'arcade' && src && arcadePhase !== 'results' && !choosingDifficulty && !choosingScoreFocus) ? pickingSong ? 'songPicker' : 'menu' : null
   const hasTrack = !!track
 
@@ -950,10 +964,10 @@ export default function App() {
             <span className="song-card-media">
               {slot === 1 && previewSrc?.id === entry.id ? <video ref={previewRef} src={previewSrc.url} poster={entry.thumb} playsInline preload="auto" onLoadedMetadata={(event) => {
               const video = event.currentTarget
-              previewStartRef.current = Math.min(12, Math.max(0, video.duration - 8))
+              previewStartRef.current = Math.max(previewSrc.edit?.start ?? 0, Math.min(12, Math.max(0, (previewSrc.edit?.end ?? video.duration) - 8)))
               video.currentTime = previewStartRef.current
             }} onCanPlay={(event) => { void event.currentTarget.play().catch(() => setPreviewPaused(true)) }} onPlay={() => setPreviewPaused(false)} onPause={() => setPreviewPaused(true)} onTimeUpdate={(event) => {
-              if (event.currentTarget.currentTime >= previewStartRef.current + 7) event.currentTarget.currentTime = previewStartRef.current
+              if (event.currentTarget.currentTime >= Math.min(previewStartRef.current + 7, previewSrc.edit?.end ?? Infinity)) event.currentTarget.currentTime = previewStartRef.current
             }} /> : entry.thumb && <img src={entry.thumb} alt="" />}
             </span>
             <strong title={entry.name}>{entry.name.replace(/\.[^.]+$/, '')}</strong>
@@ -972,7 +986,7 @@ export default function App() {
     return (
       <Suspense fallback={<LoadingStage />}>
         <main className={`panels ${mode === 'arcade' && ['countdown', 'playing', 'paused'].includes(gamePhase) ? 'game-active' : mode === 'arcade' && gamePhase === 'results' ? 'game-results-stage' : ''}`}>
-          <VideoPanel src={src} playbackRef={gameVideoRef} targetRef={targetRef} sections={current?.sections ?? []} sectionStats={current?.sectionStats} onSectionsChange={(sections) => void updateSections(sections)} focus={focus} track={track} onAnalyse={() => void analyse()} analysing={analysing} analysisMessage={analysisMessage} showSkeletons={settings.showSkeletons} trackHead={settings.trackHead} difficulty={difficulty} gamePhase={panelPhase} countdown={countdown} gameRun={gameRun} onGameEnd={() => void finishRound()} hitFeedback={hitFeedback} />
+          <VideoPanel src={src} playbackRef={gameVideoRef} targetRef={targetRef} sections={current?.sections ?? []} sectionStats={current?.sectionStats} onSectionsChange={(sections) => void updateSections(sections)} focus={focus} track={track} songEdit={activeScreen === 'arcade' ? songEdit : null} onAnalyse={() => void analyse()} analysing={analysing} analysisMessage={analysisMessage} showSkeletons={settings.showSkeletons} trackHead={settings.trackHead} difficulty={difficulty} gamePhase={panelPhase} countdown={countdown} gameRun={gameRun} onGameEnd={() => void finishRound()} hitFeedback={hitFeedback} />
         </main>
       </Suspense>
     )
@@ -1064,7 +1078,7 @@ export default function App() {
       <div className={`destination-wrap ${['countdown', 'playing', 'paused'].includes(arcadePhase) ? 'game-screen-active' : ''}`}>
         {renderHeader('Arcade')}
         {arcadePhase === 'playing' && <section className="game-flow game-playing" aria-live="polite"><div className="game-score-strip">{(gamePlayers.length ? gamePlayers : Array.from({ length: Math.max(1, lobby.players) }, () => null)).map((player, index) => <span key={index}><b>P{index + 1}</b> {player?.score.toLocaleString() ?? '0'}<small>{player?.combo ? `${player.combo}× ${T('combo')}` : T('build your combo')}</small>{import.meta.env.DEV && scoreDebug[index] && <small className="score-debug">{scoreDebug[index].cue} · {scoreDebug[index].grade} · {Math.round(scoreDebug[index].lag * 1000)}ms</small>}</span>)}</div><button className="pause-button" onClick={() => dispatch({ type: 'pause' })} aria-label={T('Pause')}>Ⅱ</button></section>}
-        {arcadePhase === 'results' && <section className="game-flow game-results" aria-live="polite" data-gesture-surface><ResultsScreen players={gamePlayers} difficulty={difficulty} records={resultRecords} reducedEffects={settings.reducedEffects} photoRound={resultPhotoRound} photoPrompt={photoPrompt(resultPhotoRound - 1)} onCapture={captureResultPhoto} onReplay={startRound} onChooseSong={chooseSong} onHome={() => go('openHome')} /></section>}
+        {arcadePhase === 'results' && <section className="game-flow game-results" aria-live="polite" data-gesture-surface>{isTrimmed(songEdit) && <p>Trimmed round · full-song personal bests are unchanged.</p>}<ResultsScreen players={gamePlayers} difficulty={difficulty} records={resultRecords} reducedEffects={settings.reducedEffects} photoRound={resultPhotoRound} photoPrompt={photoPrompt(resultPhotoRound - 1)} onCapture={captureResultPhoto} onReplay={startRound} onChooseSong={chooseSong} onHome={() => go('openHome')} /></section>}
         {renderPanels('arcade')}
         {arcadePhase === 'playing' && trackingRecovery.mode !== 'playing' && <div className="tracking-recovery" data-recovery-mode={trackingRecovery.mode} role="status" aria-live="polite">
           <span className="kicker">{L('Tracking paused', '追踪已暂停')}</span>
@@ -1079,7 +1093,7 @@ export default function App() {
 
   const renderPractice = () => <div className="destination-wrap" data-gesture-surface>{renderHeader('Practice Studio')}{renderPanels('practice')}{src && <footer className="practice-legend"><span className="legend-group"><span className="legend-title">{T('Reference')}</span><span className="legend-item"><i style={{ background: SIDE_COLORS.left }} /> {T("dancer's left")}</span><span className="legend-item"><i style={{ background: SIDE_COLORS.right }} /> {T("dancer's right")}</span></span><span className="legend-group"><span className="legend-title">{T('You')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.ok }} /> {T('matching')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.warn }} /> {T('a bit off')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.bad }} /> {T('way off')}</span></span></footer>}</div>
 
-  const renderLibrary = () => <div className="destination-wrap">{renderHeader('Library')}<main className="destination-screen library-screen" data-gesture-surface><div className="screen-title-row"><h1>{L('Your songs', '你的歌曲')}</h1><button className="btn primary" data-needs-file onClick={() => openFilePicker('arcade')}>{T('Add a dance')}</button></div>{filePickerNotice && <p className="file-picker-notice" role="status">{L('Use the device to choose a video file.', '请用设备选择视频文件。')}</p>}<Library entries={library} stats={stats} records={records} currentId={currentId} selectedId={gestureSelectedId} onPreview={(entry) => setGestureSelectedId(entry.id)} onOpen={(entry) => void openEntry(entry)} onForget={(entry) => void forgetEntry(entry)} emptyHint={T('No songs yet. Add a dance video to build your library.')} /><ResultPhotoGallery /></main></div>
+  const renderLibrary = () => <div className="destination-wrap">{renderHeader('Library')}<main className="destination-screen library-screen" data-gesture-surface><div className="screen-title-row"><h1>{L('Your songs', '你的歌曲')}</h1><button className="btn primary" data-needs-file onClick={() => openFilePicker('arcade')}>{T('Add a dance')}</button></div>{filePickerNotice && <p className="file-picker-notice" role="status">{L('Use the device to choose a video file.', '请用设备选择视频文件。')}</p>}<Library entries={library} stats={stats} records={records} currentId={currentId} selectedId={gestureSelectedId} onPreview={(entry) => setGestureSelectedId(entry.id)} onOpen={(entry) => void openEntry(entry)} onForget={(entry) => void forgetEntry(entry)} onEdit={setEditingSong} emptyHint={T('No songs yet. Add a dance video to build your library.')} /><ResultPhotoGallery /></main></div>
 
   useLangTick()
   return (
@@ -1090,11 +1104,16 @@ export default function App() {
       <audio ref={menuMusicRef} src={menuTheme ? `${import.meta.env.BASE_URL}audio/${menuTheme.file}` : undefined} loop preload="none" />
       {src && activeScreen === 'arcade' && arcadePhase === 'setup' && <audio ref={difficultyPreviewRef} src={src} preload="auto" onLoadedMetadata={(event) => {
         const audio = event.currentTarget
-        difficultyPreviewStartRef.current = Math.min(12, Math.max(0, audio.duration - 8))
-        audio.currentTime = selectedPreviewTimeRef.current || difficultyPreviewStartRef.current
+        difficultyPreviewStartRef.current = Math.max(songEdit?.start ?? 0, Math.min(12, Math.max(0, (songEdit?.end ?? audio.duration) - 8)))
+        audio.currentTime = Math.max(songEdit?.start ?? 0, Math.min(selectedPreviewTimeRef.current || difficultyPreviewStartRef.current, (songEdit?.end ?? audio.duration) - .01))
       }} onCanPlay={(event) => { if (choicePreviewActive) void event.currentTarget.play().catch(() => undefined) }} onTimeUpdate={(event) => {
-        if (event.currentTarget.currentTime >= difficultyPreviewStartRef.current + 7) event.currentTarget.currentTime = difficultyPreviewStartRef.current
+        if (event.currentTarget.currentTime >= Math.min(difficultyPreviewStartRef.current + 7, songEdit?.end ?? Infinity)) event.currentTarget.currentTime = difficultyPreviewStartRef.current
       }} />}
+      {editingSong && <Suspense fallback={<div className="editor-loading">Opening song editor…</div>}><SongEditor key={editingSong.id} entry={editingSong} reducedEffects={settings.reducedEffects} onClose={() => setEditingSong(null)} onSaved={() => {
+        setEditRevision((value) => value + 1)
+        setBeatMaps((previous) => { const next = new Map(previous); next.delete(songBeatKey(editingSong.id)); return next })
+        void refresh()
+      }} /></Suspense>}
       <input ref={fileInputRef} hidden type="file" accept="video/*" multiple onChange={(event) => { void loadFiles(Array.from(event.target.files ?? []), fileDestinationRef.current); event.target.value = '' }} />
       {(importMessage || Object.keys(preparation).length > 0) && <aside className="preparation-status" aria-label={L('Song preparation', '歌曲准备')}>
         <details>
@@ -1141,7 +1160,7 @@ export default function App() {
       {activeScreen === 'library' && renderLibrary()}
       {recordSyncError && <div className="record-sync-warning" role="alert">{L('Personal bests are saved here, but account sync failed.', '个人最佳成绩已保存在本机，但账号同步失败。')} <button onClick={() => void syncFromAccount()}>{L('Retry', '重试')}</button></div>}
       {navigation.screen !== 'attract' && <Suspense fallback={null}><div className={`camera-dock camera-${navigation.screen === 'tracking' ? 'tracking' : activeScreen === 'arcade' ? arcadePhase : activeScreen}${cameraRunning ? '' : ' camera-off'}`}>
-        <WebcamPanel targetRef={targetRef} playbackRef={gameVideoRef} track={track} videoId={current?.id} videoName={current?.name} onSectionPractice={(deltas) => void recordSectionPractice(deltas)} focus={focus} onFocusChange={setFocus} showSkeletons={settings.showCameraSkeletons} trackHead={settings.trackHead} showPoseDebug={settings.showPoseDebug} onPhotoFrameReady={onPhotoFrameReady} gamePhase={activeScreen === 'arcade' ? gamePhase : 'lobby'} gameRun={gameRun} difficulty={difficulty} onLobbyChange={updateLobby} onGameScores={updateGameScores} onHit={showHit} onScoreDebug={import.meta.env.DEV ? updateScoreDebug : undefined} onSoloPresence={reportSoloPresence} registrationPlayers={registrationPlayers} onRegistrationPlayersChange={setRegistrationPlayers} registrationScreen={navigation.screen === 'tracking'} diagnosticRequested={diagnosticRequested} onDiagnosticsClose={() => { setDiagnosticRequested(false); dispatch({ type: 'openHome' }) }} gestureContext={gestureContext} onGestureAction={handleGestureAction} soundMuted={settings.soundMuted} onRunningChange={setCameraRunning} />
+        <WebcamPanel targetRef={targetRef} playbackRef={gameVideoRef} track={track} songEdit={activeScreen === 'arcade' ? songEdit : null} videoId={current?.id} videoName={current?.name} onSectionPractice={(deltas) => void recordSectionPractice(deltas)} focus={focus} onFocusChange={setFocus} showSkeletons={settings.showCameraSkeletons} trackHead={settings.trackHead} showPoseDebug={settings.showPoseDebug} onPhotoFrameReady={onPhotoFrameReady} gamePhase={activeScreen === 'arcade' ? gamePhase : 'lobby'} gameRun={gameRun} difficulty={difficulty} onLobbyChange={updateLobby} onGameScores={updateGameScores} onHit={showHit} onScoreDebug={import.meta.env.DEV ? updateScoreDebug : undefined} onSoloPresence={reportSoloPresence} registrationPlayers={registrationPlayers} onRegistrationPlayersChange={setRegistrationPlayers} registrationScreen={navigation.screen === 'tracking'} diagnosticRequested={diagnosticRequested} onDiagnosticsClose={() => { setDiagnosticRequested(false); dispatch({ type: 'openHome' }) }} gestureContext={gestureContext} onGestureAction={handleGestureAction} soundMuted={settings.soundMuted} onRunningChange={setCameraRunning} />
       </div></Suspense>}
       {navigation.screen === 'settings' && (beatLabOpen
         ? <BeatLab library={library} initialTheme={settings.menuTheme} onClose={() => setBeatLabOpen(false)} onMapChange={(key, map) => setBeatMaps((previous) => new Map(previous).set(key, map))} />

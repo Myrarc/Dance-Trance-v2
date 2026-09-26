@@ -409,6 +409,8 @@ export async function getVideo(id: string): Promise<File | Blob | null> {
 }
 
 export async function forget(id: string): Promise<void> {
+  await deleteBeatMap(`song-edit:${id}`)
+  await deleteBeatMap(`song-draft:${id}`)
   try {
     await tx(BEAT_MAP_STORE, 'readwrite', (s) => s.delete(`song:${id}`))
     await tx(TRACK_STORE, 'readwrite', (s) => s.delete(id))
@@ -429,6 +431,16 @@ export async function writeBeatMap(id: string, value: unknown): Promise<void> {
 
 export async function deleteBeatMap(id: string): Promise<void> {
   await mutateBeatMap((store) => store.delete(id))
+}
+
+/** Commit visual edits and their lighting together; a draft never affects playback. */
+export async function commitSongEdit(id: string, edit: unknown, lighting: unknown): Promise<void> {
+  await mutateBeatMap((store) => {
+    store.put(edit, `song-edit:${id}`)
+    if (lighting === null) store.delete(`song:${id}`)
+    else store.put(lighting, `song:${id}`)
+    store.delete(`song-draft:${id}`)
+  })
 }
 
 async function mutateBeatMap(run: (store: IDBObjectStore) => void): Promise<void> {

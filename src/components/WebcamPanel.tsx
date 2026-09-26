@@ -37,6 +37,7 @@ import {
   type PlayerRound,
 } from '../pose/gameplay'
 import { advanceScoringClock, buildMotionIntervals, evaluateMotionInterval, liveMotionFrame, motionLagLimit, referenceMotionFrames, type MotionFrame } from '../pose/motionScore'
+import { withinTrim, type SongEdit } from '../lib/songEdits'
 import type { Difficulty } from '../pose/hitTargets'
 import type { PoseTrack } from '../pose/track'
 
@@ -121,6 +122,7 @@ export interface SectionPractice {
 }
 
 interface Props {
+  songEdit?: SongEdit | null
   targetRef: React.MutableRefObject<TargetPose>
   playbackRef?: React.MutableRefObject<HTMLVideoElement | null>
   track?: PoseTrack | null
@@ -170,6 +172,7 @@ export default function WebcamPanel({
   targetRef,
   playbackRef,
   track,
+  songEdit,
   videoId,
   videoName,
   onSectionPractice,
@@ -207,8 +210,10 @@ export default function WebcamPanel({
   difficultyRef.current = difficulty
   const motionChart = useMemo(() => {
     const frames = track ? referenceMotionFrames(track) : []
-    return { frames, intervals: buildMotionIntervals(frames, focus, trackHead) }
-  }, [track, focus, trackHead])
+    return { frames, intervals: withinTrim(buildMotionIntervals(frames, focus, trackHead), songEdit) }
+  }, [track, focus, trackHead, songEdit])
+  const songEditRef = useRef(songEdit)
+  songEditRef.current = songEdit
   const motionChartRef = useRef(motionChart)
   motionChartRef.current = motionChart
   const playbackRefRef = useRef(playbackRef)
@@ -559,7 +564,7 @@ export default function WebcamPanel({
       const playbackVideo = playbackRefRef.current?.current
       const scoringClock = advanceScoringClock(
         playbackVideo?.currentTime ?? targetRef.current.time,
-        playbackVideo?.ended ?? false,
+        !!playbackVideo && (playbackVideo.ended || (!!songEditRef.current && playbackVideo.currentTime >= songEditRef.current.end)),
         frameNow,
         playbackEndedAtRef.current,
       )

@@ -37,6 +37,7 @@ import {
   drawCueGlyph,
 } from '../pose/arcade'
 import SectionList from './SectionList'
+import { visualCues, type SongEdit } from '../lib/songEdits'
 import { activeSection, newSectionId, type Section, type SectionStat } from '../lib/library'
 import type { GamePhase, HitGrade } from '../pose/gameplay'
 
@@ -58,6 +59,7 @@ export interface TargetPose {
 const LAG_WINDOW_S = 1
 
 interface Props {
+  songEdit?: SongEdit | null
   src: string
   playbackRef?: React.MutableRefObject<HTMLVideoElement | null>
   targetRef: React.MutableRefObject<TargetPose>
@@ -154,6 +156,7 @@ export default function VideoPanel({
   onSectionsChange,
   focus,
   track,
+  songEdit,
   onAnalyse,
   analysing,
   analysisMessage,
@@ -169,8 +172,8 @@ export default function VideoPanel({
   const trackRef = useRef<PoseTrack | null>(null)
   trackRef.current = track ?? null
   const cueChart = useMemo(
-    () => (track ? buildCueChart(track, difficulty, trackHead, focus) : []),
-    [difficulty, focus, track, trackHead],
+    () => visualCues(songEdit, track ? buildCueChart(track, difficulty, trackHead, focus) : [], difficulty, focus, trackHead),
+    [difficulty, focus, track, trackHead, songEdit],
   )
   const cueChartRef = useRef(cueChart)
   cueChartRef.current = cueChart
@@ -267,7 +270,7 @@ export default function VideoPanel({
     }
     if (gamePhase === 'countdown') {
       video.pause()
-      video.currentTime = 0
+      video.currentTime = songEdit?.start ?? 0
       resetTargetClock()
       setLoopA(null)
       setLoopB(null)
@@ -275,7 +278,7 @@ export default function VideoPanel({
       const resuming = target.gameRun === gameRun && video.currentTime > 0
       if (!resuming) {
         resetTargetClock()
-        video.currentTime = 0
+        video.currentTime = songEdit?.start ?? 0
       }
       let cancelled = false
       const play = () => {
@@ -295,7 +298,7 @@ export default function VideoPanel({
       video.pause()
       target.gameRun = 0
     }
-  }, [gamePhase, gameRun, targetRef])
+  }, [gamePhase, gameRun, targetRef, songEdit])
 
   useEffect(() => {
     const query = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -795,6 +798,12 @@ export default function VideoPanel({
     const v = videoRef.current
     if (!v) return
     setCurrentTime(v.currentTime)
+    if (gamePhase === 'playing' && songEdit && v.currentTime >= songEdit.end && gameEndTimerRef.current === null) {
+      v.pause()
+      v.currentTime = songEdit.end
+      gameEndTimerRef.current = setTimeout(() => onGameEnd?.(), 1700)
+      return
+    }
     if (loopA !== null && loopB !== null && v.currentTime > loopB) {
       v.currentTime = loopA
     }

@@ -13,6 +13,7 @@ interface Props {
   onOpen: (entry: LibraryEntry) => void
   onPreview?: (entry: LibraryEntry) => void
   onForget: (entry: LibraryEntry) => void
+  onEdit?: (entry: LibraryEntry) => void
   /** Shown when the list is empty, i.e. before anything has been loaded. */
   emptyHint?: string
 }
@@ -26,7 +27,7 @@ function when(ts: number): string {
   return `${Math.floor(days / 30)}mo ago`
 }
 
-export default function Library({ entries, stats, records = [], currentId, selectedId, onOpen, onPreview, onForget, emptyHint }: Props) {
+export default function Library({ entries, stats, records = [], currentId, selectedId, onOpen, onPreview, onForget, onEdit, emptyHint }: Props) {
   const bestByVideo = useMemo(() => {
     const best = new Map<string, ArcadeRecord>()
     for (const record of records) {
@@ -75,6 +76,7 @@ export default function Library({ entries, stats, records = [], currentId, selec
                 </span>
               </span>
             </button>
+            {onEdit && <button className="btn library-edit" onClick={() => onEdit(entry)} aria-label={`Edit ${entry.name}`}>Edit song</button>}
             <button
               className="library-forget"
               data-gesture-skip
