@@ -11,6 +11,9 @@
 .editor-video video, .editor-video canvas { display: block; width: 100%; height: 100%; }
 .editor-video canvas { position: absolute; inset: 0; cursor: crosshair; }
 .editor-tools { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; margin-block: 12px; }
+.editor-hit-controls { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.editor-hit-controls b { font-size: 13px; }
+.song-editor .editor-hit-controls button { padding: 6px 9px; background: #2cb8ba; }
 .editor-skeleton-controls { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 9px; border: 2px solid #30213f; border-radius: 5px; background: #fff7e0; }
 .editor-skeleton-controls label:first-child { padding-right: 8px; border-right: 2px solid #30213f; }
 .editor-skeleton-controls label:has(input:disabled) { opacity: .5; }
