@@ -6,6 +6,7 @@ import Library from './components/Library'
 import ResultPhotoGallery from './components/ResultPhotoGallery'
 import BeatLab from './components/BeatLab'
 import UpdateToast from './components/UpdateToast'
+import AttractKiosk from './components/AttractKiosk'
 import { Brand, HomeScreen, PauseOverlay, ResultsScreen, SettingsScreen, type ResultRecord } from './components/GameShell'
 import { T, L, useLangTick, getLang, setLang } from './i18n'
 import { LEVEL_COLORS, SIDE_COLORS } from './pose/skeleton'
@@ -102,6 +103,7 @@ export default function App() {
   const [previewPaused, setPreviewPaused] = useState(false)
   const [beatLabOpen, setBeatLabOpen] = useState(false)
   const [diagnosticRequested, setDiagnosticRequested] = useState(false)
+  const [kioskPlaying, setKioskPlaying] = useState(false)
   const [beatMaps, setBeatMaps] = useState<Map<string, BeatMap | null>>(new Map())
   const [filePickerNotice, setFilePickerNotice] = useState(false)
   const [cameraRunning, setCameraRunning] = useState(false)
@@ -576,7 +578,7 @@ export default function App() {
   }
 
   const pickingSong = !src && navigation.screen !== 'settings' && (activeScreen === 'arcade' || activeScreen === 'practice')
-  const menuMusicActive = !beatLabOpen && !pickingSong && (navigation.screen === 'attract' || !src || (activeScreen === 'arcade' && arcadePhase === 'results') || (activeScreen !== 'arcade' && activeScreen !== 'practice'))
+  const menuMusicActive = !kioskPlaying && !beatLabOpen && !pickingSong && (navigation.screen === 'attract' || !src || (activeScreen === 'arcade' && arcadePhase === 'results') || (activeScreen !== 'arcade' && activeScreen !== 'practice'))
   const choicePreviewActive = activeScreen === 'arcade' && arcadePhase === 'setup' && !!src && (choosingScoreFocus || choosingDifficulty)
   const menuTheme = MENU_THEMES.find((theme) => theme.id === settings.menuTheme)
   useEffect(() => {
@@ -1046,12 +1048,16 @@ export default function App() {
         if (event.currentTarget.currentTime >= difficultyPreviewStartRef.current + 7) event.currentTarget.currentTime = difficultyPreviewStartRef.current
       }} />}
       <input ref={fileInputRef} hidden type="file" accept="video/*" onChange={(event) => { void loadFile(event.target.files?.[0], fileDestinationRef.current); event.target.value = '' }} />
-      {navigation.screen === 'attract' && <main ref={attractRef} className="attract-screen" onClick={(event) => { if (event.detail === 0) return; playSfx('menu', settings.soundMuted); dispatch({ type: 'wake' }) }}>
+      {navigation.screen === 'attract' && <main ref={attractRef} className={`attract-screen${kioskPlaying ? ' is-demo' : ''}`} onClick={(event) => { if (event.detail === 0) return; playSfx('menu', settings.soundMuted); dispatch({ type: 'wake' }) }}>
+        <AttractKiosk library={library} reducedEffects={settings.reducedEffects} onPlayingChange={setKioskPlaying} />
+        <div className="attract-rays" aria-hidden="true" />
         <Brand />
-        <div className="attract-demo" aria-hidden="true">
-          <span className="demo-player demo-one">P1</span><span className="demo-player demo-two">P2</span>
-          <span className="demo-hit">PERFECT!</span><span className="demo-combo">12× COMBO</span>
-          <span className="demo-rail"><i /><i /><i /><i /></span>
+        <div className="attract-showcase" aria-hidden="true">
+          <div className="attract-orbit orbit-one" /><div className="attract-orbit orbit-two" />
+          <img className="attract-dancer" src={`${import.meta.env.BASE_URL}menu/play.webp`} alt="" draggable={false} />
+          <span className="attract-sticker sticker-left">{L('FEEL THE BEAT', '感受节拍')}</span>
+          <span className="attract-sticker sticker-right">{L('MAKE YOUR MOVE', '舞动起来')}</span>
+          <div className="attract-notes">{Array.from({ length: 9 }, (_, index) => <i key={index} style={{ '--note-index': index } as React.CSSProperties}>✦</i>)}</div>
         </div>
         <button className="attract-start">{L('PRESS ANY BUTTON', '按任意键开始')}</button>
         <p>{L('Your dance. Your game. One or two players.', '你的舞蹈，你的游戏。一人或两人同玩。')}</p>

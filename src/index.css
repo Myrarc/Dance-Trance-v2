@@ -2593,6 +2593,50 @@ input[type='range'] { accent-color: var(--accent); }
   cursor: pointer;
 }
 .attract-screen > p { font-size: 18px; font-weight: 800; }
+.attract-screen { position: relative; isolation: isolate; overflow: hidden; height: 100dvh; min-height: 100dvh; grid-template-rows: auto minmax(0, 1fr) auto auto; background: radial-gradient(ellipse at 50% 45%, #624477, #241930 75%); }
+.attract-screen > .brand-lockup, .attract-screen > .attract-start, .attract-screen > p { position: relative; z-index: 1; }
+.attract-rays { position: absolute; z-index: -1; width: 200vmax; height: 200vmax; left: calc(50% - 100vmax); top: calc(50% - 100vmax); background: repeating-conic-gradient(from 0deg, #e7aa3314 0deg 12deg, transparent 12deg 30deg); animation: attract-spin 80s linear infinite; pointer-events: none; }
+.attract-showcase { position: relative; width: min(100%, 1100px); min-height: 0; justify-self: center; display: grid; place-items: center; }
+.attract-dancer { position: relative; z-index: 1; height: 100%; min-height: 0; max-height: 38vh; max-width: min(48vw, 480px); object-fit: contain; filter: drop-shadow(12px 14px 0 #191223); animation: attract-groove 2.4s ease-in-out infinite; }
+.attract-orbit { position: absolute; width: min(65vw, 660px); aspect-ratio: 2 / 1; border: 4px dashed var(--cyan); border-radius: 50%; rotate: -15deg; box-shadow: 0 0 36px #2cb8ba22; }
+.orbit-two { rotate: 18deg; border-color: var(--warn); scale: .84; animation: attract-orbit 5s ease-in-out infinite alternate; }
+.attract-sticker { position: absolute; z-index: 2; padding: .55em .8em; color: var(--ink); background: var(--warn); border: 3px solid var(--ink); box-shadow: 6px 6px 0 var(--cyan); font-size: clamp(14px, 2.1vw, 30px); font-weight: 1000; }
+.sticker-left { left: 1%; top: 20%; rotate: -9deg; animation: attract-groove 3s ease-in-out infinite reverse; }
+.sticker-right { right: 0; bottom: 18%; rotate: 8deg; background: var(--cyan); box-shadow: 6px 6px 0 var(--accent); animation: attract-groove 2.8s ease-in-out infinite; }
+.attract-notes { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.attract-notes i { position: absolute; left: calc(5% + var(--note-index) * 11%); bottom: -50px; color: var(--cyan); font-size: clamp(25px, 4vw, 54px); font-style: normal; animation: attract-note 4s calc(var(--note-index) * -.47s) linear infinite; }
+.attract-notes i:nth-child(even) { color: var(--warn); }
+.attract-start { animation: attract-call 1.6s ease-in-out infinite alternate; }
+@keyframes attract-spin { to { transform: rotate(360deg); } }
+@keyframes attract-groove { 50% { transform: translateY(-12px) rotate(3deg); } }
+@keyframes attract-orbit { to { transform: rotate(-24deg) scale(1.1); } }
+@keyframes attract-note { from { transform: translateY(0) rotate(0); opacity: 0; } 15%, 70% { opacity: .8; } to { transform: translateY(-50vh) rotate(150deg); opacity: 0; } }
+@keyframes attract-call { to { box-shadow: 12px 12px 0 var(--cyan), 0 0 36px #e7aa3355; transform: translateY(-3px); } }
+.attract-screen.is-demo > :not(.kiosk-demo) { visibility: hidden; }
+.kiosk-demo { position: fixed; inset: 0; z-index: 10; background: #100b17; overflow: hidden; }
+.kiosk-demo video, .kiosk-demo canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.kiosk-heading, .kiosk-combo { position: absolute; top: clamp(16px, 3vw, 42px); padding: 12px 20px; display: grid; gap: 4px; text-align: left; color: var(--ink); background: var(--warn); border: 3px solid var(--ink); border-radius: 8px; box-shadow: 6px 6px 0 var(--ink); }
+.kiosk-heading { left: 3%; max-width: 58%; }
+.kiosk-heading span { font-size: clamp(12px, 1vw, 18px); font-weight: 1000; letter-spacing: .18em; }
+.kiosk-heading strong { font-size: clamp(15px, 1.8vw, 27px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kiosk-combo { right: 3%; text-align: right; background: var(--cyan); }
+.kiosk-combo strong { font-size: clamp(18px, 2.5vw, 38px); }
+.kiosk-combo span { font-weight: 900; }
+.kiosk-join { position: absolute; bottom: 3%; left: 50%; translate: -50% 0; display: grid; gap: 5px; width: max-content; max-width: 94%; padding: 12px 26px; background: #30233fe8; color: var(--panel); border: 3px solid var(--cyan); border-radius: 8px; }
+.kiosk-join strong { font-size: clamp(22px, 3vw, 44px); color: var(--warn); }
+.kiosk-join span { font-size: clamp(12px, 1.6vw, 23px); font-weight: 900; }
+.reduce-effects .attract-rays, .reduce-effects .attract-dancer, .reduce-effects .attract-orbit, .reduce-effects .attract-sticker, .reduce-effects .attract-notes i, .reduce-effects .attract-start { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .attract-rays, .attract-dancer, .attract-orbit, .attract-sticker, .attract-notes i, .attract-start { animation: none; }
+}
+@media (max-width: 600px) {
+  .attract-screen { padding: 24px 16px; gap: 18px; }
+  .attract-sticker { padding: 8px; }
+  .sticker-left { top: 4%; }
+  .sticker-right { bottom: 3%; }
+  .kiosk-heading, .kiosk-combo { padding: 7px 9px; }
+  .kiosk-heading { max-width: 52%; }
+}
 @keyframes attract-bounce { 50% { translate: 0 -10px; } }
 
 .tracking-screen {
