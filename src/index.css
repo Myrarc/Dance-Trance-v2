@@ -3420,10 +3420,7 @@ input[type='range'] { accent-color: var(--accent); }
   gap: 0;
   padding: 0;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 4% 10%, rgba(231, 170, 51, .24) 0 2px, transparent 3px) 0 0 / 14px 14px,
-    linear-gradient(110deg, transparent 0 22%, rgba(44, 184, 186, .13) 22.2% 23%, transparent 23.2% 100%),
-    var(--panel);
+  background: var(--panel) url('/menu/track-picker-stage.webp') center bottom / cover no-repeat;
 }
 .destination-wrap:has(> .track-picker) .app-header {
   position: relative;
@@ -3464,74 +3461,6 @@ input[type='range'] { accent-color: var(--accent); }
   padding: 0 clamp(16px, 2vw, 34px) clamp(14px, 2dvh, 24px);
   overflow: hidden;
 }
-.picker-spectacle { position: absolute; z-index: -2; inset: 0; overflow: hidden; pointer-events: none; }
-.picker-spectacle::before {
-  content: 'DANCE';
-  position: absolute;
-  top: -5dvh;
-  left: 50%;
-  color: rgba(231, 170, 51, .1);
-  font-family: 'Trance Display', Impact, sans-serif;
-  font-size: clamp(180px, 26vw, 500px);
-  line-height: .8;
-  transform: translateX(-50%) skewX(-9deg);
-}
-.picker-ribbon {
-  position: absolute;
-  top: 28%;
-  left: -8%;
-  width: 116%;
-  height: 36%;
-  border: clamp(22px, 2.6vw, 52px) solid transparent;
-  border-top-color: rgba(238, 102, 95, .8);
-  border-radius: 50%;
-  transform: rotate(-2deg);
-}
-.picker-ribbon::after {
-  content: '';
-  position: absolute;
-  inset: clamp(20px, 3vw, 60px) -3% auto;
-  height: clamp(24px, 3vw, 60px);
-  border-radius: 50%;
-  background: var(--cyan);
-  opacity: .78;
-}
-.picker-ribbon-two { top: 36%; border-top-color: var(--warn); transform: rotate(4deg) scaleX(1.04); opacity: .8; }
-.picker-ribbon-two::after { background: #f5348b; }
-.picker-equalizer {
-  position: absolute;
-  top: 48%;
-  bottom: 16%;
-  width: 15%;
-  opacity: .7;
-  background:
-    repeating-linear-gradient(90deg, #7b54f2 0 8%, transparent 8% 14%),
-    linear-gradient(to top, #38c8f0 0 42%, #9b5fe8 42% 78%, transparent 78%);
-  clip-path: polygon(0 100%, 0 45%, 8% 45%, 8% 18%, 16% 18%, 16% 55%, 24% 55%, 24% 31%, 32% 31%, 32% 8%, 40% 8%, 40% 38%, 48% 38%, 48% 62%, 56% 62%, 56% 26%, 64% 26%, 64% 46%, 72% 46%, 72% 14%, 80% 14%, 80% 68%, 88% 68%, 88% 35%, 96% 35%, 96% 100%);
-}
-.picker-equalizer-left { left: 0; }
-.picker-equalizer-right { right: 0; transform: scaleX(-1); }
-.picker-floor {
-  position: absolute;
-  right: -8%;
-  bottom: -7%;
-  left: -8%;
-  height: 38%;
-  border-top: 8px solid white;
-  background:
-    repeating-linear-gradient(90deg, transparent 0 8.8%, rgba(44, 184, 186, .42) 9% 9.3%, transparent 9.5% 18%),
-    repeating-linear-gradient(0deg, rgba(255,255,255,.86) 0 3px, transparent 3px 70px),
-    linear-gradient(105deg, rgba(44,184,186,.45), rgba(245,231,200,.25) 45%, rgba(245,52,139,.43));
-  transform: perspective(420px) rotateX(52deg);
-  transform-origin: bottom;
-  box-shadow: 0 -14px 24px rgba(255,255,255,.9);
-}
-.picker-spotlight { position: absolute; bottom: 10%; width: 84px; height: 52px; border: 5px solid var(--ink); border-radius: 50%; background: #f5348b; box-shadow: 0 0 25px 12px #f5348b99; }
-.picker-spotlight::before { content: ''; position: absolute; bottom: 36px; left: 22px; width: 34px; height: 130px; background: linear-gradient(to top, #f5348b66, transparent); clip-path: polygon(24% 100%, 76% 100%, 100% 0, 0 0); }
-.picker-spotlight-left { left: 1%; transform: rotate(-12deg); }
-.picker-spotlight-right { right: 1%; background: #37d8ff; box-shadow: 0 0 25px 12px #37d8ff99; transform: rotate(12deg); }
-.picker-spotlight-right::before { background: linear-gradient(to top, #37d8ff66, transparent); }
-
 .picker-heading { position: relative; z-index: 3; display: grid; justify-items: center; gap: clamp(8px, 1dvh, 14px); }
 .picker-heading h1 {
   position: relative;
@@ -3660,7 +3589,6 @@ input[type='range'] { accent-color: var(--accent); }
   .track-picker .song-carousel { --carousel-step: 54vw; height: 440px; }
   .track-picker .song-card { width: min(62vw, 430px); height: 390px; min-height: 0; }
   .carousel-paddle { width: 52px; }
-  .picker-floor { bottom: -8%; }
 }
 
 @media (max-width: 560px) {
@@ -3679,9 +3607,4 @@ input[type='range'] { accent-color: var(--accent); }
   .carousel-paddle { top: 45%; width: 42px; border-width: 3px; border-radius: 12px; font-size: 48px; }
   .carousel-paddle-left { left: -5px; }
   .carousel-paddle-right { right: -5px; }
-  .picker-spotlight { display: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .picker-ribbon, .picker-floor, .picker-spotlight { animation: none; }
 }

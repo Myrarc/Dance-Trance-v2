@@ -991,11 +991,6 @@ export default function App() {
       onDragOver={(event) => { event.preventDefault(); setDragOver(true) }}
       onDragLeave={() => setDragOver(false)}
       onDrop={(event) => { event.preventDefault(); setDragOver(false); void loadFiles(Array.from(event.dataTransfer.files), destination) }}>
-      <div className="picker-spectacle" aria-hidden="true">
-        <i className="picker-ribbon picker-ribbon-one" /><i className="picker-ribbon picker-ribbon-two" />
-        <i className="picker-equalizer picker-equalizer-left" /><i className="picker-equalizer picker-equalizer-right" />
-        <i className="picker-floor" /><i className="picker-spotlight picker-spotlight-left" /><i className="picker-spotlight picker-spotlight-right" />
-      </div>
       <div className="picker-heading"><h1>{L(destination === 'arcade' ? 'Select your track' : 'Select a routine', destination === 'arcade' ? '选择歌曲' : '选择练习')}</h1><PickerGestureGuide /></div>
       <div className="picker-stage">
         {library.length > 1 && <button className="carousel-paddle carousel-paddle-left" onClick={() => moveSong('left')} aria-label={L('Previous song', '上一首')}>‹</button>}

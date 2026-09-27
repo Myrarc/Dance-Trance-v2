@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import test from 'node:test'
 
 test('track picker implements the approved arcade stage without discarded slogans', async () => {
@@ -9,7 +9,6 @@ test('track picker implements the approved arcade stage without discarded slogan
   ])
 
   for (const className of [
-    'picker-spectacle',
     'picker-gesture-guide',
     'carousel-paddle-left',
     'carousel-paddle-right',
@@ -19,5 +18,8 @@ test('track picker implements the approved arcade stage without discarded slogan
     assert.match(css, new RegExp(`\\.${className}`), `${className} has production styling`)
   }
   assert.match(app, /PLAY THIS TRACK/)
+  assert.match(css, /\/menu\/track-picker-stage\.webp/)
+  assert.doesNotMatch(app, /picker-spectacle|picker-ribbon|picker-equalizer|picker-floor|picker-spotlight/)
+  assert.ok((await stat(new URL('../public/menu/track-picker-stage.webp', import.meta.url))).size > 0)
   assert.doesNotMatch(`${app}\n${css}`, /music moves people|let'?s dance|good music brighter you/i)
 })
