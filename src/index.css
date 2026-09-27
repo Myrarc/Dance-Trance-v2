@@ -3505,6 +3505,7 @@ input[type='range'] { accent-color: var(--accent); }
 .track-picker .song-carousel { --carousel-step: clamp(430px, 35vw, 720px); height: clamp(360px, 49dvh, 560px); overflow: visible; }
 .track-picker .song-card {
   top: 12px;
+  grid-template-rows: 51% auto auto auto;
   width: clamp(360px, min(32vw, 62dvh), 680px);
   height: clamp(340px, 46dvh, 520px);
   min-height: 0;
@@ -3517,8 +3518,8 @@ input[type='range'] { accent-color: var(--accent); }
 .track-picker .song-card-left { rotate: -1.5deg; }
 .track-picker .song-card-right { rotate: 1.5deg; }
 .track-picker .song-card-center { outline-width: 6px; outline-offset: 7px; box-shadow: 0 0 0 4px var(--panel), 12px 14px 0 var(--ink); }
-.track-picker .song-card-media { border-width: 4px; border-radius: 3px; }
-.track-picker .song-card strong { height: auto; max-height: 2.08em; -webkit-line-clamp: 2; font-size: clamp(24px, min(2.05vw, 3.4dvh), 44px); line-height: 1.02; }
+.track-picker .song-card-media { min-height: 0; border-width: 4px; border-radius: 3px; aspect-ratio: auto; }
+.track-picker .song-card strong { height: 2.08em; max-height: 2.08em; -webkit-line-clamp: 2; font-size: clamp(24px, min(2.05vw, 3.4dvh), 44px); line-height: 1.02; }
 .song-card-action {
   display: grid;
   grid-template-columns: 54px 1fr;

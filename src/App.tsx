@@ -978,10 +978,10 @@ export default function App() {
     selectMenuItem(items[(index + (direction === 'left' ? -1 : 1) + items.length) % items.length])
   }
 
-  const renderHeader = (title: string) => (
+  const renderHeader = (title?: string) => (
     <header className="app-header">
       <button className="brand-button" onClick={() => go('openHome')} aria-label={T('Home')}><Brand compact /></button>
-      <span className="screen-label">{T(title)}</span>
+      {title && <span className="screen-label">{T(title)}</span>}
       <nav><button className="btn subtle" onClick={() => go('openEditor')}><i aria-hidden="true">▥</i>{L('Beatmap Editor', '谱面编辑器')}</button><button className="btn subtle" onClick={() => go('openPhotos')}><i aria-hidden="true">▣</i>{L('Photos', '照片')}</button><button className="btn subtle" onClick={() => go('openSettings')}><i aria-hidden="true">⚙</i>{T('Settings')}</button><AccountBar /></nav>
     </header>
   )
@@ -1110,7 +1110,7 @@ export default function App() {
 
   const renderArcade = () => {
     if (arcadePhase === 'setup') {
-      return <div className="destination-wrap">{renderHeader('Arcade')}{!src ? renderTrackPicker('arcade') : choosingScoreFocus ? renderScoreFocusPicker() : choosingDifficulty ? renderDifficultyPicker() : (
+      return <div className="destination-wrap">{renderHeader()}{!src ? renderTrackPicker('arcade') : choosingScoreFocus ? renderScoreFocusPicker() : choosingDifficulty ? renderDifficultyPicker() : (
         <main className="song-loading-screen" role="status" aria-live="polite"><div className="song-loading-card">
           <div className="song-loading-art">{current?.thumb ? <img src={current.thumb} alt="" /> : <span>♪</span>}</div>
           <div className="song-loading-copy"><span className="kicker">{L('Up next', '即将开始')}</span><h1>{current?.name.replace(/\.[^.]+$/, '') ?? T('Your dance')}</h1>
@@ -1123,7 +1123,7 @@ export default function App() {
     }
     return (
       <div className={`destination-wrap ${['countdown', 'playing', 'paused'].includes(arcadePhase) ? 'game-screen-active' : ''}`}>
-        {renderHeader('Arcade')}
+        {renderHeader()}
         {arcadePhase === 'playing' && <section className="game-flow game-playing" aria-live="polite"><div className="game-score-strip">{(gamePlayers.length ? gamePlayers : Array.from({ length: Math.max(1, lobby.players) }, () => null)).map((player, index) => <span key={index}><b>P{index + 1}</b> {player?.score.toLocaleString() ?? '0'}<small>{player?.combo ? `${player.combo}× ${T('combo')}` : T('build your combo')}</small>{import.meta.env.DEV && scoreDebug[index] && <small className="score-debug">{scoreDebug[index].cue} · {scoreDebug[index].grade} · {Math.round(scoreDebug[index].lag * 1000)}ms</small>}</span>)}</div><button className="pause-button" onClick={() => dispatch({ type: 'pause' })} aria-label={T('Pause')}>Ⅱ</button></section>}
         {arcadePhase === 'results' && <section className="game-flow game-results" aria-live="polite" data-gesture-surface><ResultsScreen players={gamePlayers} difficulty={difficulty} records={resultRecords} reducedEffects={settings.reducedEffects} photoRound={resultPhotoRound} photoPrompt={photoPrompt(resultPhotoRound - 1)} onCapture={captureResultPhoto} onReplay={startRound} onChooseSong={chooseSong} onHome={() => go('openHome')} /></section>}
         {renderPanels('arcade')}
