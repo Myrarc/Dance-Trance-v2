@@ -23,3 +23,11 @@ test('uses video media time for monotonically meaningful inference timestamps', 
   assert.equal(frameTimestampMs(1.25, 9000), 1250)
   assert.equal(frameTimestampMs(Number.NaN, 9000), 9000)
 })
+
+test('keeps inference time moving when a camera stream resets its media clock', () => {
+  const beforeReset = frameTimestampMs(12, 15000, 11967)
+  const afterReset = frameTimestampMs(0, 15033, beforeReset)
+
+  assert.equal(beforeReset, 12000)
+  assert.equal(afterReset, 15033)
+})

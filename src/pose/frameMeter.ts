@@ -43,6 +43,7 @@ export class FrameMeter {
   }
 }
 
-export function frameTimestampMs(mediaTime: number, fallbackMs: number): number {
-  return Number.isFinite(mediaTime) ? mediaTime * 1000 : fallbackMs
+export function frameTimestampMs(mediaTime: number, fallbackMs: number, previousMs = -Infinity): number {
+  const sourceMs = Number.isFinite(mediaTime) ? mediaTime * 1000 : fallbackMs
+  return sourceMs > previousMs ? sourceMs : Math.max(fallbackMs, previousMs + 1)
 }
