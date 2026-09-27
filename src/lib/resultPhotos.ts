@@ -1,4 +1,5 @@
 import { openLibraryDatabase } from './library.ts'
+import { deleteDesktopPhoto, getDesktopPhoto, saveDesktopPhoto } from './desktopStorage.ts'
 
 const META_STORE = 'resultPhotos'
 const IMAGE_STORE = 'resultPhotoImages'
@@ -12,10 +13,11 @@ export interface ResultPhoto {
 
 export async function saveResultPhoto(photo: ResultPhoto, image: Blob): Promise<void> {
   const db = await openLibraryDatabase()
+  const storedOnDesktop = await saveDesktopPhoto(photo.id, image)
   await new Promise<void>((resolve, reject) => {
-    const transaction = db.transaction([META_STORE, IMAGE_STORE], 'readwrite')
+    const transaction = db.transaction(storedOnDesktop ? [META_STORE] : [META_STORE, IMAGE_STORE], 'readwrite')
     transaction.objectStore(META_STORE).put(photo)
-    transaction.objectStore(IMAGE_STORE).put(image, photo.id)
+    if (!storedOnDesktop) transaction.objectStore(IMAGE_STORE).put(image, photo.id)
     transaction.oncomplete = () => resolve()
     transaction.onerror = () => reject(transaction.error)
     transaction.onabort = () => reject(transaction.error)
@@ -32,6 +34,8 @@ export async function listResultPhotos(): Promise<ResultPhoto[]> {
 }
 
 export async function getResultPhoto(id: string): Promise<Blob | null> {
+  const desktopPhoto = await getDesktopPhoto(id)
+  if (desktopPhoto) return desktopPhoto
   const db = await openLibraryDatabase()
   return new Promise((resolve, reject) => {
     const request = db.transaction(IMAGE_STORE, 'readonly').objectStore(IMAGE_STORE).get(id)
@@ -41,6 +45,7 @@ export async function getResultPhoto(id: string): Promise<Blob | null> {
 }
 
 export async function deleteResultPhoto(id: string): Promise<void> {
+  await deleteDesktopPhoto(id)
   const db = await openLibraryDatabase()
   await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction([META_STORE, IMAGE_STORE], 'readwrite')

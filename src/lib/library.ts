@@ -11,6 +11,7 @@
 const DB_NAME = 'dance-trainer'
 import type { ArcadeRecord } from '../game/records'
 import type { PoseCorrection } from '../pose/poseCorrections'
+import { deleteDesktopSong, getDesktopSong, isDesktopApp, saveDesktopSong } from './desktopStorage.ts'
 
 const DB_VERSION = 6
 const META_STORE = 'library'
@@ -231,6 +232,7 @@ async function putMeta(entry: LibraryEntry): Promise<void> {
  * budget. Their records stay, so the library still shows what you have danced.
  */
 async function evict(keepId: string): Promise<void> {
+  if (isDesktopApp()) return
   const all = await listLibrary()
   const stored = all.filter((e) => e.hasVideo)
   let bytes = stored.reduce((a, e) => a + e.size, 0)
@@ -267,8 +269,11 @@ export async function remember(file: File): Promise<LibraryEntry | null> {
         lastOpenedAt: now,
         openCount: existing.openCount + 1,
       }
-      // Re-picking a file we had dropped restores it.
-      if (!entry.hasVideo && file.size <= MAX_STORED_BYTES) {
+      // Re-picking a desktop file restores it even when someone removed the
+      // visible copy from the songs folder.
+      if (isDesktopApp()) {
+        entry.hasVideo = await saveDesktopSong(id, file)
+      } else if (!entry.hasVideo && file.size <= MAX_STORED_BYTES) {
         try {
           await tx(BLOB_STORE, 'readwrite', (s) => s.put(file, id))
           entry.hasVideo = true
@@ -294,7 +299,9 @@ export async function remember(file: File): Promise<LibraryEntry | null> {
       thumb,
       hasVideo: false,
     }
-    if (file.size <= MAX_STORED_BYTES) {
+    if (await saveDesktopSong(id, file)) {
+      entry.hasVideo = true
+    } else if (file.size <= MAX_STORED_BYTES) {
       try {
         await tx(BLOB_STORE, 'readwrite', (s) => s.put(file, id))
         entry.hasVideo = true
@@ -403,6 +410,8 @@ export async function touch(id: string): Promise<void> {
 
 /** The stored file for an entry, or null if it is no longer on this device. */
 export async function getVideo(id: string): Promise<File | Blob | null> {
+  const desktopVideo = await getDesktopSong(id)
+  if (desktopVideo) return desktopVideo
   try {
     return (await tx<File | Blob | undefined>(BLOB_STORE, 'readonly', (s) => s.get(id))) ?? null
   } catch {
@@ -411,6 +420,7 @@ export async function getVideo(id: string): Promise<File | Blob | null> {
 }
 
 export async function forget(id: string): Promise<void> {
+  await deleteDesktopSong(id)
   await deleteBeatMap(`song-edit:${id}`)
   await deleteBeatMap(`song-draft:${id}`)
   await deleteBeatMap(`pose-correction-draft:${id}`)

@@ -1,8 +1,12 @@
 {
-  "name": "dance-trainer",
+  "name": "dance-trance",
+  "productName": "Dance Trance",
   "license": "MIT",
+  "description": "A private, offline-first arcade dance game for Windows.",
+  "author": "Dance Trance",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "main": "electron/main.mjs",
   "type": "module",
   "scripts": {
     "setup": "node scripts/setup-assets.mjs",
@@ -11,7 +15,9 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "node --test",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "desktop": "npm run build && electron .",
+    "package:win": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
     "@audio/beat": "^2.1.3",
@@ -25,10 +31,34 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
     "fake-indexeddb": "^6.2.5",
     "oxlint": "^1.71.0",
     "typescript": "~6.0.2",
     "vite": "^8.1.1",
     "vite-plugin-pwa": "^1.3.0"
+  },
+  "build": {
+    "appId": "com.dancetrance.arcade",
+    "productName": "Dance Trance",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }
