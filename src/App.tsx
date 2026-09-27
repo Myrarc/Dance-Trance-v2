@@ -70,6 +70,31 @@ function LoadingStage() {
   return <div className="loading-stage" role="status">{T('Loading the dance floor…')}</div>
 }
 
+function PickerPose({ pose }: { pose: 'left' | 'right' | 'select' | 'back' }) {
+  const leftArm = pose === 'left' ? 'M23 22 7 22' : pose === 'back' ? 'M23 22 12 8' : 'M23 22 14 30'
+  const rightArm = pose === 'right' ? 'M25 22 41 22' : pose === 'select' ? 'M25 22 36 8' : 'M25 22 34 30'
+  return <svg className="picker-pose" viewBox="0 0 48 48" aria-hidden="true">
+    <circle cx="24" cy="9" r="5" />
+    <path d="M24 15v20M24 34 16 46M24 34l8 12" />
+    <path d={leftArm} /><path d={rightArm} />
+  </svg>
+}
+
+function PickerGestureGuide() {
+  const guides = [
+    { pose: 'left' as const, arrow: '←', title: L('Left arm out:', '左臂平伸：'), action: L('previous song', '上一首') },
+    { pose: 'right' as const, arrow: '→', title: L('Right arm out:', '右臂平伸：'), action: L('next song', '下一首') },
+    { pose: 'select' as const, arrow: '↑', title: L('Right hand up:', '举右手：'), action: L('play', '开始') },
+    { pose: 'back' as const, arrow: '↶', title: L('Left hand up:', '举左手：'), action: L('back', '返回') },
+  ]
+  return <div className="picker-gesture-guide" aria-label={L('Gesture controls', '手势操作')}>
+    {guides.map((guide) => <div key={guide.pose} className={`picker-gesture-chip picker-gesture-${guide.pose}`}>
+      <b aria-hidden="true">{guide.arrow}</b><PickerPose pose={guide.pose} />
+      <span><strong>{guide.title}</strong><small>{guide.action}</small></span>
+    </div>)}
+  </div>
+}
+
 export default function App() {
   const [navigation, dispatch] = useReducer(gameReducer, initialGameState)
   const activeScreen = navigation.screen === 'settings' ? navigation.returnScreen ?? 'home' : navigation.screen
@@ -957,7 +982,7 @@ export default function App() {
     <header className="app-header">
       <button className="brand-button" onClick={() => go('openHome')} aria-label={T('Home')}><Brand compact /></button>
       <span className="screen-label">{T(title)}</span>
-      <nav><button className="btn subtle" onClick={() => go('openEditor')}>{L('Beatmap Editor', '谱面编辑器')}</button><button className="btn subtle" onClick={() => go('openPhotos')}>{L('Photos', '照片')}</button><button className="btn subtle" onClick={() => go('openSettings')}>{T('Settings')}</button><AccountBar /></nav>
+      <nav><button className="btn subtle" onClick={() => go('openEditor')}><i aria-hidden="true">▥</i>{L('Beatmap Editor', '谱面编辑器')}</button><button className="btn subtle" onClick={() => go('openPhotos')}><i aria-hidden="true">▣</i>{L('Photos', '照片')}</button><button className="btn subtle" onClick={() => go('openSettings')}><i aria-hidden="true">⚙</i>{T('Settings')}</button><AccountBar /></nav>
     </header>
   )
 
@@ -966,8 +991,14 @@ export default function App() {
       onDragOver={(event) => { event.preventDefault(); setDragOver(true) }}
       onDragLeave={() => setDragOver(false)}
       onDrop={(event) => { event.preventDefault(); setDragOver(false); void loadFiles(Array.from(event.dataTransfer.files), destination) }}>
-      <div className="picker-heading"><h1>{L(destination === 'arcade' ? 'Select your track' : 'Select a routine', destination === 'arcade' ? '选择歌曲' : '选择练习')}</h1><p>{L('Left arm out: previous song · Right arm out: next song · Right hand up: play · Left hand up: back', '左臂平伸：上一首 · 右臂平伸：下一首 · 举右手：开始 · 举左手：返回')}</p></div>
+      <div className="picker-spectacle" aria-hidden="true">
+        <i className="picker-ribbon picker-ribbon-one" /><i className="picker-ribbon picker-ribbon-two" />
+        <i className="picker-equalizer picker-equalizer-left" /><i className="picker-equalizer picker-equalizer-right" />
+        <i className="picker-floor" /><i className="picker-spotlight picker-spotlight-left" /><i className="picker-spotlight picker-spotlight-right" />
+      </div>
+      <div className="picker-heading"><h1>{L(destination === 'arcade' ? 'Select your track' : 'Select a routine', destination === 'arcade' ? '选择歌曲' : '选择练习')}</h1><PickerGestureGuide /></div>
       <div className="picker-stage">
+        {library.length > 1 && <button className="carousel-paddle carousel-paddle-left" onClick={() => moveSong('left')} aria-label={L('Previous song', '上一首')}>‹</button>}
         {library.length ? <div key={carouselMotion?.turn ?? 0} className={`song-carousel${carouselMotion ? ` is-moving-${carouselMotion.direction}` : ''}`} data-count={library.length} role="group" aria-label={L('Song picker', '歌曲选择')}>
           {([library.length > 1 ? library[(library.findIndex((entry) => entry.id === previewEntry.id) - 1 + library.length) % library.length] : null, previewEntry, library.length > 2 ? library[(library.findIndex((entry) => entry.id === previewEntry.id) + 1) % library.length] : null] as const).map((entry, slot) => entry ? <button
             key={entry.id}
@@ -987,9 +1018,11 @@ export default function App() {
             }} /> : entry.thumb && <img src={entry.thumb} alt="" />}
             </span>
             <strong title={entry.name}>{entry.name.replace(/\.[^.]+$/, '')}</strong>
-            <span>{slot === 1 ? entry.hasVideo ? L('Select to dance', '选择后开始跳舞') : L('Add video again to play', '重新添加视频以开始游戏') : L('Browse to this song', '浏览这首歌曲')}</span>
+            {slot === 1 && entry.hasVideo && <span className="song-card-action"><i aria-hidden="true">▶</i><b>{L('PLAY THIS TRACK', '播放这首歌曲')}</b></span>}
+            <span className="song-card-state">{slot === 1 ? entry.hasVideo ? L('Select to dance', '选择后开始跳舞') : L('Add video again to play', '重新添加视频以开始游戏') : L('Browse to this song', '浏览这首歌曲')}</span>
           </button> : null)}
         </div> : <p className="library-empty">{T('Your prepared songs will appear here.')}</p>}
+        {library.length > 1 && <button className="carousel-paddle carousel-paddle-right" onClick={() => moveSong('right')} aria-label={L('Next song', '下一首')}>›</button>}
         {previewPaused && previewSrc?.id === previewEntry?.id && <button className="btn primary preview-play" onClick={() => { void previewRef.current?.play() }}>{L('Play preview', '播放预览')}</button>}
       </div>
       {library.length > 1 && <nav className="carousel-controls" aria-label="Song navigation"><button className="btn" onClick={() => moveSong('left')}>{L('Previous song', '上一首')}</button><button className="btn" onClick={() => moveSong('right')}>{L('Next song', '下一首')}</button></nav>}

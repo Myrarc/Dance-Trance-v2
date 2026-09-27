@@ -3411,3 +3411,277 @@ input[type='range'] { accent-color: var(--accent); }
   .carousel-controls .btn { flex: 1; min-width: 0; padding: 10px; }
   .difficulty-navigation-hint { display: block; font-size: 13px; }
 }
+
+/* Full dance-floor track picker, matched to the approved arcade concept. */
+.app-header nav > .btn i { display: none; }
+.destination-wrap:has(> .track-picker) {
+  position: relative;
+  isolation: isolate;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 4% 10%, rgba(231, 170, 51, .24) 0 2px, transparent 3px) 0 0 / 14px 14px,
+    linear-gradient(110deg, transparent 0 22%, rgba(44, 184, 186, .13) 22.2% 23%, transparent 23.2% 100%),
+    var(--panel);
+}
+.destination-wrap:has(> .track-picker) .app-header {
+  position: relative;
+  z-index: 8;
+  min-height: clamp(66px, 8dvh, 88px);
+  padding: 10px clamp(22px, 3vw, 54px);
+}
+.destination-wrap:has(> .track-picker) .brand-lockup.compact { width: clamp(190px, 15vw, 270px); }
+.destination-wrap:has(> .track-picker) .screen-label {
+  margin-left: 6px;
+  padding: 9px 14px;
+  border: 3px solid var(--ink);
+  border-radius: 0;
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: clamp(13px, 1vw, 17px);
+}
+.destination-wrap:has(> .track-picker) .app-header nav { gap: 12px; }
+.destination-wrap:has(> .track-picker) .app-header nav > .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 8px 14px;
+  border: 3px solid var(--ink);
+  border-radius: 9px;
+  background: rgba(255, 244, 216, .92);
+  box-shadow: 4px 4px 0 var(--ink);
+  font-size: 14px;
+}
+.destination-wrap:has(> .track-picker) .app-header nav > .btn i { display: inline; font-size: 21px; font-style: normal; line-height: 1; }
+
+.track-picker {
+  position: relative;
+  isolation: isolate;
+  min-height: calc(100dvh - clamp(66px, 8dvh, 88px));
+  justify-content: flex-start;
+  gap: clamp(10px, 1.4dvh, 18px);
+  padding: 0 clamp(16px, 2vw, 34px) clamp(14px, 2dvh, 24px);
+  overflow: hidden;
+}
+.picker-spectacle { position: absolute; z-index: -2; inset: 0; overflow: hidden; pointer-events: none; }
+.picker-spectacle::before {
+  content: 'DANCE';
+  position: absolute;
+  top: -5dvh;
+  left: 50%;
+  color: rgba(231, 170, 51, .1);
+  font-family: 'Trance Display', Impact, sans-serif;
+  font-size: clamp(180px, 26vw, 500px);
+  line-height: .8;
+  transform: translateX(-50%) skewX(-9deg);
+}
+.picker-ribbon {
+  position: absolute;
+  top: 28%;
+  left: -8%;
+  width: 116%;
+  height: 36%;
+  border: clamp(22px, 2.6vw, 52px) solid transparent;
+  border-top-color: rgba(238, 102, 95, .8);
+  border-radius: 50%;
+  transform: rotate(-2deg);
+}
+.picker-ribbon::after {
+  content: '';
+  position: absolute;
+  inset: clamp(20px, 3vw, 60px) -3% auto;
+  height: clamp(24px, 3vw, 60px);
+  border-radius: 50%;
+  background: var(--cyan);
+  opacity: .78;
+}
+.picker-ribbon-two { top: 36%; border-top-color: var(--warn); transform: rotate(4deg) scaleX(1.04); opacity: .8; }
+.picker-ribbon-two::after { background: #f5348b; }
+.picker-equalizer {
+  position: absolute;
+  top: 48%;
+  bottom: 16%;
+  width: 15%;
+  opacity: .7;
+  background:
+    repeating-linear-gradient(90deg, #7b54f2 0 8%, transparent 8% 14%),
+    linear-gradient(to top, #38c8f0 0 42%, #9b5fe8 42% 78%, transparent 78%);
+  clip-path: polygon(0 100%, 0 45%, 8% 45%, 8% 18%, 16% 18%, 16% 55%, 24% 55%, 24% 31%, 32% 31%, 32% 8%, 40% 8%, 40% 38%, 48% 38%, 48% 62%, 56% 62%, 56% 26%, 64% 26%, 64% 46%, 72% 46%, 72% 14%, 80% 14%, 80% 68%, 88% 68%, 88% 35%, 96% 35%, 96% 100%);
+}
+.picker-equalizer-left { left: 0; }
+.picker-equalizer-right { right: 0; transform: scaleX(-1); }
+.picker-floor {
+  position: absolute;
+  right: -8%;
+  bottom: -7%;
+  left: -8%;
+  height: 38%;
+  border-top: 8px solid white;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 8.8%, rgba(44, 184, 186, .42) 9% 9.3%, transparent 9.5% 18%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,.86) 0 3px, transparent 3px 70px),
+    linear-gradient(105deg, rgba(44,184,186,.45), rgba(245,231,200,.25) 45%, rgba(245,52,139,.43));
+  transform: perspective(420px) rotateX(52deg);
+  transform-origin: bottom;
+  box-shadow: 0 -14px 24px rgba(255,255,255,.9);
+}
+.picker-spotlight { position: absolute; bottom: 10%; width: 84px; height: 52px; border: 5px solid var(--ink); border-radius: 50%; background: #f5348b; box-shadow: 0 0 25px 12px #f5348b99; }
+.picker-spotlight::before { content: ''; position: absolute; bottom: 36px; left: 22px; width: 34px; height: 130px; background: linear-gradient(to top, #f5348b66, transparent); clip-path: polygon(24% 100%, 76% 100%, 100% 0, 0 0); }
+.picker-spotlight-left { left: 1%; transform: rotate(-12deg); }
+.picker-spotlight-right { right: 1%; background: #37d8ff; box-shadow: 0 0 25px 12px #37d8ff99; transform: rotate(12deg); }
+.picker-spotlight-right::before { background: linear-gradient(to top, #37d8ff66, transparent); }
+
+.picker-heading { position: relative; z-index: 3; display: grid; justify-items: center; gap: clamp(8px, 1dvh, 14px); }
+.picker-heading h1 {
+  position: relative;
+  margin: 0;
+  color: var(--ink);
+  font-family: 'Arial Black', Impact, sans-serif;
+  font-size: clamp(52px, min(6vw, 9dvh), 108px);
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: .015em;
+  line-height: .88;
+  text-transform: uppercase;
+  text-shadow: 3px 3px 0 white, 7px 7px 0 #f5348b;
+  transform: skewX(-5deg);
+}
+.picker-heading h1::after { content: ''; position: absolute; right: 4%; bottom: -10px; left: 4%; height: 8px; background: linear-gradient(90deg, var(--cyan) 0 28%, #f5348b 28% 68%, var(--warn) 68%); transform: skewX(-28deg); }
+.picker-gesture-guide { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; width: min(1120px, 76vw); }
+.picker-gesture-chip {
+  display: grid;
+  grid-template-columns: 32px 45px minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  min-height: 62px;
+  padding: 6px 10px;
+  border: 3px solid rgba(48,35,63,.5);
+  border-radius: 18px;
+  background: rgba(255, 249, 232, .94);
+  box-shadow: 0 4px 0 rgba(48,35,63,.18);
+}
+.picker-gesture-chip > b { color: var(--cyan); font-size: 38px; line-height: 1; text-align: center; }
+.picker-gesture-right > b { color: #f5348b; }
+.picker-gesture-select > b { color: var(--warn); }
+.picker-gesture-back > b { color: var(--cyan); }
+.picker-pose { width: 42px; height: 48px; overflow: visible; fill: var(--ink); stroke: var(--ink); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.picker-pose path { fill: none; }
+.picker-gesture-chip span { display: grid; min-width: 0; line-height: 1.05; }
+.picker-gesture-chip strong, .picker-gesture-chip small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-gesture-chip strong { font-size: clamp(12px, 1vw, 17px); }
+.picker-gesture-chip small { font-size: clamp(12px, .9vw, 15px); font-weight: 850; }
+
+.picker-stage { z-index: 2; flex: 1; min-height: 0; }
+.track-picker .song-carousel { --carousel-step: clamp(430px, 35vw, 720px); height: clamp(360px, 49dvh, 560px); overflow: visible; }
+.track-picker .song-card {
+  top: 12px;
+  width: clamp(360px, min(32vw, 62dvh), 680px);
+  height: clamp(340px, 46dvh, 520px);
+  min-height: 0;
+  gap: clamp(6px, .8dvh, 12px);
+  padding: clamp(10px, 1vw, 15px);
+  border-width: 5px;
+  border-radius: 14px;
+  box-shadow: 10px 12px 0 var(--ink);
+}
+.track-picker .song-card-left { rotate: -1.5deg; }
+.track-picker .song-card-right { rotate: 1.5deg; }
+.track-picker .song-card-center { outline-width: 6px; outline-offset: 7px; box-shadow: 0 0 0 4px var(--panel), 12px 14px 0 var(--ink); }
+.track-picker .song-card-media { border-width: 4px; border-radius: 3px; }
+.track-picker .song-card strong { height: auto; max-height: 2.08em; -webkit-line-clamp: 2; font-size: clamp(24px, min(2.05vw, 3.4dvh), 44px); line-height: 1.02; }
+.song-card-action {
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  align-items: center;
+  width: 92%;
+  min-height: clamp(48px, 6dvh, 68px);
+  margin: auto auto 0;
+  padding: 5px 20px 5px 6px;
+  border: 4px solid var(--ink);
+  border-radius: 999px;
+  background: #ffd435;
+  box-shadow: inset 0 0 0 3px var(--panel), 0 4px 0 rgba(48,35,63,.25);
+  text-align: center;
+}
+.song-card-action i { display: grid; place-items: center; height: 100%; color: var(--ink); font-size: clamp(30px, 3vw, 48px); font-style: normal; }
+.song-card-action b { font-size: clamp(20px, min(2vw, 3.2dvh), 38px); font-weight: 950; line-height: 1; }
+.song-card-state { font-size: clamp(12px, 1vw, 16px) !important; font-weight: 900 !important; }
+.carousel-paddle {
+  position: absolute;
+  z-index: 6;
+  top: 48%;
+  display: grid;
+  place-items: center;
+  width: clamp(56px, 4vw, 78px);
+  aspect-ratio: .72;
+  border: 5px solid var(--ink);
+  border-radius: 20px;
+  background: var(--ink);
+  color: white;
+  box-shadow: inset 0 0 0 4px var(--cyan), 5px 6px 0 var(--ink), 0 0 20px #37d8ffaa;
+  font-size: clamp(56px, 5vw, 88px);
+  line-height: .7;
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+.carousel-paddle-left { left: 0; }
+.carousel-paddle-right { right: 0; }
+.track-picker .carousel-controls { position: relative; z-index: 4; margin-top: -4px; }
+.track-picker .carousel-controls .btn { min-width: 155px; border-width: 3px; border-radius: 8px; background: var(--panel); box-shadow: 4px 5px 0 var(--ink); }
+.track-picker .picker-import { position: relative; z-index: 4; }
+.track-picker .picker-import .btn { border-width: 3px; border-radius: 8px; box-shadow: 4px 5px 0 var(--ink); }
+
+@media (min-width: 901px) and (max-height: 800px) {
+  .destination-wrap:has(> .track-picker) .app-header { min-height: 60px; padding-block: 6px; }
+  .destination-wrap:has(> .track-picker) .brand-lockup.compact { width: 170px; }
+  .destination-wrap:has(> .track-picker) .app-header nav > .btn { min-height: 38px; padding-block: 5px; }
+  .track-picker { min-height: calc(100dvh - 60px); gap: 6px; padding-top: 0; }
+  .picker-heading h1 { font-size: clamp(46px, 7.8dvh, 66px); }
+  .picker-gesture-chip { min-height: 50px; padding-block: 3px; }
+  .picker-pose { width: 34px; height: 38px; }
+  .track-picker .song-carousel { height: 390px; }
+  .track-picker .song-card { width: clamp(340px, min(29vw, 58dvh), 510px); height: 350px; }
+  .track-picker .song-card strong { font-size: clamp(21px, 2.7dvh, 30px); }
+  .song-card-action { min-height: 48px; }
+  .song-card-action b { font-size: clamp(18px, 2.6dvh, 25px); }
+  .track-picker .carousel-controls .btn, .track-picker .picker-import .btn { min-height: 38px; }
+}
+
+@media (max-width: 900px) {
+  .destination-wrap:has(> .track-picker) { overflow: auto; }
+  .destination-wrap:has(> .track-picker) .app-header { flex-wrap: wrap; padding: 10px 14px; }
+  .destination-wrap:has(> .track-picker) .brand-lockup.compact { width: 150px; }
+  .destination-wrap:has(> .track-picker) .app-header nav { width: 100%; justify-content: center; }
+  .destination-wrap:has(> .track-picker) .app-header nav > .btn { min-height: 40px; padding: 6px 9px; font-size: 12px; }
+  .track-picker { width: 100%; min-height: 0; padding: 12px; overflow: hidden; }
+  .picker-heading h1 { font-size: clamp(42px, 10vw, 66px); }
+  .picker-gesture-guide { grid-template-columns: repeat(2, minmax(0, 1fr)); width: min(680px, 96vw); }
+  .track-picker .song-carousel { --carousel-step: 54vw; height: 440px; }
+  .track-picker .song-card { width: min(62vw, 430px); height: 390px; min-height: 0; }
+  .carousel-paddle { width: 52px; }
+  .picker-floor { bottom: -8%; }
+}
+
+@media (max-width: 560px) {
+  .destination-wrap:has(> .track-picker) .screen-label { display: none; }
+  .destination-wrap:has(> .track-picker) .app-header nav > .btn i { display: none; }
+  .picker-gesture-guide { gap: 5px; }
+  .picker-gesture-chip { grid-template-columns: 28px 34px minmax(0, 1fr); min-height: 50px; padding: 4px 6px; border-radius: 12px; }
+  .picker-gesture-chip > b { font-size: 30px; }
+  .picker-pose { width: 30px; height: 36px; }
+  .picker-gesture-chip strong, .picker-gesture-chip small { font-size: 10px; }
+  .track-picker .song-carousel { --carousel-step: 72vw; height: 390px; }
+  .track-picker .song-card { width: min(76vw, 350px); height: 350px; }
+  .track-picker .song-card strong { font-size: 22px; }
+  .song-card-action { grid-template-columns: 38px 1fr; min-height: 46px; }
+  .song-card-action b { font-size: 17px; }
+  .carousel-paddle { top: 45%; width: 42px; border-width: 3px; border-radius: 12px; font-size: 48px; }
+  .carousel-paddle-left { left: -5px; }
+  .carousel-paddle-right { right: -5px; }
+  .picker-spotlight { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .picker-ribbon, .picker-floor, .picker-spotlight { animation: none; }
+}
