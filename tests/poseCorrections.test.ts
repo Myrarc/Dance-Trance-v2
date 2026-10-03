@@ -52,6 +52,7 @@ test('pose corrections persist beside the original track buffer', async () => {
   await saveTrack(id, { version: 4, fps: 15, frames: 1, buffer })
   const corrections = [{ frame: 0, landmark: 15, x: 0.7, y: 0.3, worldX: 0.5, worldY: -0.1 }]
   await saveTrackCorrections(id, corrections)
+  await saveTrack(id, { version: 5, fps: 15, frames: 1, buffer })
   const stored = await getTrack(id)
   assert.deepEqual(stored?.corrections, corrections)
   assert.equal(stored?.buffer.byteLength, buffer.byteLength)

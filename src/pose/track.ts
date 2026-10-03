@@ -14,7 +14,7 @@ import { applyPoseCorrections, type PoseCorrection } from './poseCorrections'
  */
 
 const SAMPLE_FPS = 15
-const TRACK_VERSION = 4
+const TRACK_VERSION = 5
 const MAX_INPUT_WIDTH = 640
 /** x, y, visibility for the drawn skeleton; x, y, z for the maths. */
 const VALUES_PER_LANDMARK = 6
@@ -140,18 +140,17 @@ async function analyseVideoLegacy(
   video.muted = true
   video.playsInline = true
 
-  const modelStarted = performance.now()
-  const landmarker = await createPoseLandmarker(1)
-  const modelMs = performance.now() - modelStarted
+  let landmarker: Awaited<ReturnType<typeof createPoseLandmarker>> | null = null
   const canvas = document.createElement('canvas')
 
   try {
-    await new Promise<void>((resolve, reject) => {
-      video.onloadedmetadata = () => resolve()
-      video.onerror = () => reject(new Error('cannot decode'))
-    })
+    if (!await waitForVideoMetadata(video, shouldStop)) return null
     const duration = Number.isFinite(video.duration) ? video.duration : 0
     if (duration <= 0) return null
+    const modelStarted = performance.now()
+    landmarker = await createPoseLandmarker(1, 'full')
+    const modelMs = performance.now() - modelStarted
+    if (shouldStop()) return null
 
     const frames = Math.max(1, Math.ceil(duration * SAMPLE_FPS))
     const data = new Float32Array(frames * STRIDE).fill(NaN)
@@ -227,10 +226,33 @@ async function analyseVideoLegacy(
       rhythmAnalysed: true,
     }
   } finally {
-    landmarker.close()
+    landmarker?.close()
     URL.revokeObjectURL(url)
     video.removeAttribute('src')
   }
+}
+
+/** Media may already be loaded; cancellation must also release the analysis queue. */
+export function waitForVideoMetadata(video: HTMLVideoElement, shouldStop: () => boolean): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const finish = (ready: boolean, error?: Error) => {
+      clearInterval(poll)
+      clearTimeout(timeout)
+      video.removeEventListener('loadedmetadata', loaded)
+      video.removeEventListener('error', failed)
+      if (error) reject(error)
+      else resolve(ready)
+    }
+    const loaded = () => finish(true)
+    const failed = () => finish(false, new Error('Cannot decode video metadata'))
+    const poll = setInterval(() => { if (shouldStop()) finish(false) }, 100)
+    const timeout = setTimeout(() => finish(false, new Error('Video metadata timed out')), 10_000)
+    video.addEventListener('loadedmetadata', loaded)
+    video.addEventListener('error', failed)
+    if (shouldStop()) finish(false)
+    else if (video.error) failed()
+    else if (video.readyState >= 1) loaded()
+  })
 }
 
 function seek(video: HTMLVideoElement, t: number): Promise<void> {
@@ -334,7 +356,7 @@ export const unpackTrack = (p: {
   beats?: ArrayBuffer
   corrections?: PoseCorrection[]
 }): PoseTrack | null =>
-  p.version === TRACK_VERSION || p.version === 3
+  p.version === TRACK_VERSION || p.version === 4 || p.version === 3
     ? {
         fps: p.fps,
         frames: p.frames,

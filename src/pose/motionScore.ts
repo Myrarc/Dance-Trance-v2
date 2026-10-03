@@ -1,5 +1,5 @@
-import { BONES, HEAD, computeAngles, inFocus, type Focus, type PoseFeature, type Vec } from './angles.ts'
-import type { Difficulty } from './hitTargets.ts'
+import { BONES, HEAD, computeAngles, type PoseFeature, type Vec } from './angles.ts'
+import type { CueEvent, Difficulty } from './hitTargets.ts'
 import type { PoseTrack } from './track.ts'
 
 export interface MotionFrame {
@@ -13,12 +13,16 @@ export interface MotionInterval {
   end: number
   kind: 'move' | 'hold'
   keys: string[]
+  /** The exact displayed target, including its scheduled beat time. */
+  cue?: CueEvent
 }
 
 export interface MotionEvidence {
   quality: number | null
   coverage: number
   lag: number
+  movement?: number
+  timing?: number
 }
 
 export const motionLagLimit = (difficulty: Difficulty) => SETTINGS[difficulty].lag
@@ -30,11 +34,12 @@ export function advanceScoringClock(mediaTime: number, ended: boolean, nowMs: nu
   return { time: mediaTime + (nowMs - endedAt) / 1000, endedAt }
 }
 
-const SETTINGS: Record<Difficulty, { lag: number; sigma: number; penalty: number }> = {
-  easy: { lag: 1.5, sigma: 35, penalty: 0.25 },
-  normal: { lag: 1.1, sigma: 27, penalty: 0.5 },
-  hard: { lag: 0.8, sigma: 20, penalty: 0.75 },
+export const MOTION_SETTINGS: Record<Difficulty, { lag: number; sigma: number; perfect: number }> = {
+  easy: { lag: 0.55, sigma: 35, perfect: 0.25 },
+  normal: { lag: 0.4, sigma: 27, perfect: 0.18 },
+  hard: { lag: 0.3, sigma: 20, perfect: 0.12 },
 }
+const SETTINGS = MOTION_SETTINGS
 const STEP_S = 0.5
 const GAP_GRACE_S = 0.3
 const LAG_CHANGE_S = 0.6
@@ -43,10 +48,6 @@ const norm = (value: Vec) => Math.hypot(value.x, value.y, value.z)
 const dot = (a: Vec, b: Vec) => a.x * b.x + a.y * b.y + a.z * b.z
 const delta = (a: Vec, b: Vec): Vec => ({ x: b.x - a.x, y: b.y - a.y, z: b.z - a.z })
 const angle = (a: Vec, b: Vec) => Math.acos(clamp(dot(a, b), -1, 1)) * 180 / Math.PI
-const keysFor = (focus: Focus, trackHead: boolean) => [
-  ...BONES.map((bone) => bone.name),
-  ...(trackHead ? [HEAD] : []),
-].filter((key) => inFocus(key, focus))
 
 export function liveMotionFrame(
   t: number,
@@ -101,42 +102,23 @@ function available(frame: MotionFrame, key: string) {
   return (frame.visibility?.[key] ?? 1) >= 0.5 ? frame.feature[key] ?? null : null
 }
 
-/** Every active half-second is judged once; only a stable pose after motion makes a hold. */
-export function buildMotionIntervals(frames: MotionFrame[], focus: Focus, trackHead = true): MotionInterval[] {
-  if (frames.length < 2) return []
-  const intervals: MotionInterval[] = []
-  const keys = keysFor(focus, trackHead)
-  const end = frames[frames.length - 1].t
-  for (let start = 0; start + STEP_S <= end + 0.001; start += STEP_S) {
-    const relevant = frames.filter((frame) => frame.t >= start - 0.001
-      && frame.t <= start + STEP_S + 0.001)
-    const moving = keys.filter((key) => {
-      const visible = relevant.map((frame) => available(frame, key)).filter((value) => value !== null)
-      if (visible.length < 3) return false
-      const first = visible[0]
-      let departure = 0
-      let travel = 0
-      for (let index = 1; index < visible.length; index++) {
-        departure = Math.max(departure, angle(first, visible[index]))
-        travel += angle(visible[index - 1], visible[index])
-      }
-      return departure >= 8 && travel >= 10
-    })
-    if (!moving.length) continue
-    intervals.push({ start, end: start + STEP_S, kind: 'move', keys: moving })
-
-    const holdStart = start + STEP_S
-    const holdEnd = holdStart + 0.6
-    if (holdEnd > end + 0.001) continue
-    const holdFrames = frames.filter((frame) => frame.t >= holdStart - 0.001 && frame.t <= holdEnd + 0.001)
-    const held = moving.filter((key) => {
-      const visible = holdFrames.map((frame) => available(frame, key)).filter((value) => value !== null)
-      return visible.length >= 7 && visible.every((value) => angle(visible[0], value) <= 8)
-    })
-    if (held.length) intervals.push({ start: holdStart, end: holdEnd, kind: 'hold', keys: held })
-  }
-  return intervals.sort((a, b) => a.end - b.end || a.start - b.start)
+/** Score each displayed target once, using its own reference movement span. */
+export function motionIntervalsForCues(cues: CueEvent[], start = 0): MotionInterval[] {
+  return cues.map((cue) => {
+    const keys = cue.kind === 'clap' ? ['lUpperArm', 'lForearm', 'rUpperArm', 'rForearm']
+      : cue.joint === 'head' ? [HEAD]
+        : cue.joint === 'leftHand' ? ['lUpperArm', 'lForearm']
+          : cue.joint === 'rightHand' ? ['rUpperArm', 'rForearm']
+            : cue.joint === 'leftFoot' ? ['lThigh', 'lShin'] : ['rThigh', 'rShin']
+    return { start: cue.kind === 'hold' ? cue.poseTime : Math.max(start, cue.poseTime - STEP_S),
+      end: cue.poseTime + (cue.kind === 'hold' ? cue.duration : 0),
+      kind: cue.kind === 'hold' ? 'hold' as const : 'move' as const, keys, cue }
+  }).filter((interval) => interval.end > interval.start)
+    .sort((a, b) => a.cue!.time - b.cue!.time)
 }
+
+export const motionJudgmentTime = (interval: MotionInterval, difficulty: Difficulty) =>
+  (interval.cue?.time ?? interval.end) + motionLagLimit(difficulty) + 0.02
 
 function interpolate(frames: MotionFrame[], time: number): MotionFrame | null {
   let after = frames.findIndex((frame) => frame.t >= time - 0.001)
@@ -195,7 +177,8 @@ export function evaluateMotionInterval(
     return (mirror.quality ?? -1) > (direct.quality ?? -1) ? mirror : direct
   }
   const sampleStart = interval.kind === 'move' ? Math.max(0, interval.start - 0.2) : interval.start
-  if (lagLocked && hasLongGap(player, sampleStart + previousLag, interval.end + previousLag)) {
+  const cueOffset = (interval.cue?.time ?? interval.end) - interval.end
+  if (lagLocked && hasLongGap(player, sampleStart + cueOffset + previousLag, interval.end + cueOffset + previousLag)) {
     return { quality: null, coverage: 0, lag: previousLag }
   }
   const settings = SETTINGS[difficulty]
@@ -204,11 +187,11 @@ export function evaluateMotionInterval(
   const referencePoints = Array.from({ length: 5 }, (_, index) =>
     interpolate(reference, sampleStart + (interval.end - sampleStart) * index / 4))
   for (let offset = -settings.lag; offset <= settings.lag + 0.001; offset += 0.05) {
-    const lag = Math.round(offset * 100) / 100
+    const lag = Math.round(offset * 100) / 100 || 0
     if (lagLocked && Math.abs(lag - previousLag) > LAG_CHANGE_S + 0.001) continue
-    if (hasLongGap(player, sampleStart + lag, interval.end + lag)) continue
+    if (hasLongGap(player, sampleStart + cueOffset + lag, interval.end + cueOffset + lag)) continue
     const playerPoints = Array.from({ length: 5 }, (_, index) =>
-      interpolate(player, sampleStart + (interval.end - sampleStart) * index / 4 + lag))
+      interpolate(player, sampleStart + (interval.end - sampleStart) * index / 4 + cueOffset + lag))
     let poseSum = 0
     let motionSum = 0
     let motionWeight = 0
@@ -249,14 +232,17 @@ export function evaluateMotionInterval(
     if (coverage < 0.6) continue
     const pose = poseSum / covered
     const motion = interval.kind === 'hold' ? pose : motionWeight ? motionSum / motionWeight : 0
-    const timing = clamp(1 - settings.penalty * Math.abs(lag) / settings.lag)
-    let quality = interval.kind === 'hold' ? pose * 0.85 + timing * 0.15
-      : motion * 0.5 + pose * 0.35 + timing * 0.15
-    if (interval.kind === 'move' && motion < 0.1) quality = Math.min(quality, 0.4)
-    const rank = quality - 0.08 * Math.abs(lag - previousLag) / settings.lag
+    let movement = interval.kind === 'hold' ? pose : (motion * 0.5 + pose * 0.35) / 0.85
+    if (interval.kind === 'move' && motion < 0.1) movement = Math.min(movement, 0.4)
+    const timing = Math.abs(lag) <= settings.perfect + 0.001 ? 1
+      : clamp(0.79 * (settings.lag - Math.abs(lag)) / (settings.lag - settings.perfect))
+    const quality = movement * timing
+    // Select the best movement alignment first, then grade its timing. Otherwise
+    // an incorrect on-time pose can conceal a correctly detected late movement.
+    const rank = movement - 0.08 * Math.abs(lag - previousLag) / settings.lag
     if (rank > bestRank) {
       bestRank = rank
-      best = { quality, coverage, lag }
+      best = { quality, coverage, lag, movement, timing }
     }
   }
   return best

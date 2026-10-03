@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { PoseTrack } from '../src/pose/track.ts'
-import { buildCueChart, nearestScoredCue, nearestVisibleCue, removeOverlappingLimbCues, upcomingCues, type CueEvent } from '../src/pose/hitTargets.ts'
+import { buildCueChart, removeOverlappingLimbCues, upcomingCues, type CueEvent } from '../src/pose/hitTargets.ts'
 
 const fps = 10
 const frames = 40
@@ -68,6 +68,22 @@ test('turns a movement endpoint into a Spot cue', () => {
   const cue = buildCueChart(track, 'hard').find((value) => value.kind === 'spot' && value.joint === 'leftHand')
   assert.ok(cue)
   assert.ok(cue.confidence > 0)
+})
+
+test('wide reference framing retains the same movement targets as a close shot', () => {
+  const track = makeTrack((data, frame) => {
+    const step = frame <= 6 ? frame : 12 - Math.min(frame, 12)
+    setPoint(data, frame, 15, 0.3 + step * 0.035, 0.45)
+  })
+  const wide = { ...track, data: track.data.slice() }
+  for (let offset = 0; offset < wide.data.length; offset += 6) {
+    wide.data[offset] = .5 + (wide.data[offset] - .5) * .3
+    wide.data[offset + 1] = .5 + (wide.data[offset + 1] - .5) * .3
+  }
+  const original = buildCueChart(track, 'hard')
+  const scaled = buildCueChart(wide, 'hard')
+  assert.ok(original.length > 0)
+  assert.deepEqual(scaled.map((cue) => [cue.kind, cue.time, cue.poseTime]), original.map((cue) => [cue.kind, cue.time, cue.poseTime]))
 })
 
 test('moving across the frame with still limbs does not create hand hits', () => {
@@ -238,28 +254,4 @@ test('shows one upcoming cue per limb channel and keeps Hold visible for its dur
   ]
   const visible = upcomingCues(cues, 0.9, 0.8)
   assert.deepEqual(visible.map((cue) => cue.kind), ['hold', 'spot'])
-})
-
-test('phrase feedback anchors to the nearest visible hit circle', () => {
-  const cues: CueEvent[] = [
-    { kind: 'spot', time: 1.5, poseTime: 1.5, joint: 'leftHand', x: 0.2, y: 0.3, feature: {}, confidence: 1 },
-    { kind: 'spot', time: 1.6, poseTime: 1.6, joint: 'rightFoot', x: 0.7, y: 0.8, feature: {}, confidence: 1 },
-  ]
-  assert.equal(nearestVisibleCue(cues, 1.4, 0.8), cues[0])
-  assert.equal(nearestVisibleCue(cues, 1.59, 0.8), cues[1])
-  assert.equal(nearestVisibleCue(cues, 1.59, 0.8, ['lUpperArm']), cues[0])
-  assert.equal(nearestVisibleCue(cues, 1.59, 0.8, ['rForearm']), null)
-  assert.equal(nearestVisibleCue(cues, 3, 0.8), null)
-})
-
-test('a completed movement cannot put its grade on the next unreached marker', () => {
-  const cues: CueEvent[] = [
-    { kind: 'spot', time: 1.1, poseTime: 1, joint: 'leftHand', x: 0.2, y: 0.3, feature: {}, confidence: 1 },
-    { kind: 'spot', time: 2.4, poseTime: 2.4, joint: 'leftHand', x: 0.8, y: 0.3, feature: {}, confidence: 1 },
-  ]
-  assert.equal(nearestScoredCue(cues, 1, 2, ['lUpperArm']), cues[0])
-  assert.equal(nearestScoredCue(cues, 1.7, 2, ['lUpperArm']), null)
-  assert.equal(nearestScoredCue([
-    { kind: 'spot', time: 2.05, poseTime: 1, joint: 'leftHand', x: 0.5, y: 0.3, feature: {}, confidence: 1 },
-  ], 1, 2, ['lUpperArm']), null)
 })

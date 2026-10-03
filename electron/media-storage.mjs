@@ -1,4 +1,5 @@
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { basename, extname, join } from 'node:path'
 
 function validId(id) {
@@ -36,8 +37,16 @@ export function createMediaStorage(root) {
     initialize,
     async saveSong({ id, name, data }) {
       await initialize()
-      await deleteSong(id)
-      await writeFile(join(songs, `${validId(id)}--${safeName(name)}`), new Uint8Array(data))
+      const destination = join(songs, `${validId(id)}--${safeName(name)}`)
+      const previous = await matchingSong(id)
+      const temporary = join(songs, `.${id}-${randomUUID()}.tmp`)
+      try {
+        await writeFile(temporary, new Uint8Array(data), { flag: 'wx', flush: true })
+        await rename(temporary, destination)
+      } finally {
+        await rm(temporary, { force: true })
+      }
+      if (previous && previous !== destination) await rm(previous, { force: true })
       return true
     },
     async readSong(id) {

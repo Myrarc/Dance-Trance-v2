@@ -1,5 +1,6 @@
 import { SIDE_COLORS } from './skeleton.ts'
 import { HIT_LEAD_S, type CueEvent, type HitJoint } from './hitTargets.ts'
+import type { HitFeedback } from './gameplay.ts'
 
 export { HIT_LEAD_S } from './hitTargets.ts'
 
@@ -12,6 +13,9 @@ export const HIT_COLORS: Record<HitJoint, string> = {
 }
 
 export const HIT_BURST_DURATION_S = 0.48
+
+export const activeHitFeedback = (hits: HitFeedback[], now: number) =>
+  hits.filter((hit) => now >= hit.at && now - hit.at <= HIT_BURST_DURATION_S * 1000)
 
 export function cueColor(cue: CueEvent) {
   if (cue.kind === 'clap') return '#ee665f'
@@ -113,9 +117,10 @@ export function drawArcadeHitLabel(
   y: number,
   radius: number,
   grade: 'perfect' | 'good' | 'miss',
+  player?: number,
 ) {
   const fontSize = Math.max(12, radius * 0.42)
-  const label = grade.toUpperCase()
+  const label = `${player ? `P${player} ` : ''}${grade.toUpperCase()}`
 
   ctx.save()
   ctx.font = `800 ${fontSize}px 'Trance Display', Impact, sans-serif`
@@ -125,9 +130,9 @@ export function drawArcadeHitLabel(
   ctx.lineJoin = 'round'
   ctx.lineWidth = lineWidth
   ctx.strokeStyle = '#30233f'
-  ctx.strokeText(label, x, y, radius * 1.65)
+  ctx.strokeText(label, x, y, radius * (player ? 2.5 : 1.65))
   ctx.fillStyle = grade === 'perfect' ? '#2cb8ba' : grade === 'good' ? '#e7aa33' : '#f06b68'
-  ctx.fillText(label, x, y, radius * 1.65)
+  ctx.fillText(label, x, y, radius * (player ? 2.5 : 1.65))
   ctx.restore()
 }
 

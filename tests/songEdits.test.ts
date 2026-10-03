@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import 'fake-indexeddb/auto'
-import { copyMarkerSequence, filterPreviewCues, loadSongEdit, markerRange, pasteMarkerSequence, saveSongDraft, saveSongEdit, validateSongEdit, visualCues, withinTrim, type SongEdit } from '../src/lib/songEdits.ts'
+import { copyMarkerSequence, filterPreviewCues, loadSongEdit, markerFromCue, markerRange, pasteMarkerSequence, saveSongDraft, saveSongEdit, validateSongEdit, visualCues, type SongEdit } from '../src/lib/songEdits.ts'
 import { forget } from '../src/lib/library.ts'
 import { loadBeatMap, songBeatKey } from '../src/lib/beatMaps.ts'
 import type { CueEvent } from '../src/pose/hitTargets.ts'
@@ -25,11 +25,25 @@ test('drafts stay private until an atomic save publishes cues and lights, and fo
 test('visual edits respect focus and original timestamps, with an empty chart deliberately hiding cues', () => {
   const all = visualCues(edit, [], 'normal', 'full', true)
   assert.equal(all.length, 2)
-  assert.equal(all[0].time, 12)
+  assert.equal(all[0].time, 13)
+  assert.equal(all[0].poseTime, 12)
   assert.equal(visualCues(edit, [], 'normal', 'upper', true).length, 1)
   assert.equal(visualCues(edit, [], 'normal', 'lower', true)[0].time, 15)
   assert.deepEqual(visualCues({ ...edit, charts: { easy: [] } }, all, 'easy', 'full', true), [])
   assert.deepEqual(visualCues(edit, all, 'hard', 'full', true), all)
+})
+
+test('editor holds start where their timeline bar starts and generated end holds remain saveable', () => {
+  const hold: CueEvent = { kind: 'hold', joint: 'leftHand', time: 2, poseTime: 1, duration: 1,
+    x: .2, y: .4, confidence: 1, feature: {} }
+  const marker = markerFromCue(hold, 'hold')
+  assert.equal(marker.time, 1)
+  const saved = validateSongEdit({ ...edit, duration: 2.5, start: 0, end: 2.5, lighting: null, charts: { normal: [marker] } })
+  const restored = visualCues(saved, [], 'normal', 'upper', false)[0]
+  assert.equal(restored.kind, 'hold')
+  assert.equal(restored.time, 2)
+  assert.equal(restored.poseTime, 1)
+  assert.equal(restored.kind === 'hold' && restored.time - restored.duration, marker.time)
 })
 
 test('editor preview visibility independently hides head, hand, and foot markers', () => {
@@ -59,10 +73,12 @@ test('marker ranges copy and paste as a sequence with relative timing intact', (
   const pasted = pasteMarkerSequence(copied, 20, 60, () => `copy-${++id}`)
   assert.deepEqual(pasted.map((marker) => [marker.id, marker.time]), [['copy-1', 20], ['copy-2', 24]])
 })
-test('trimming excludes outside scoring intervals without changing their evidence or timestamps', () => {
-  const intervals = [{ start: 9.5, end: 10 }, { start: 10, end: 10.5 }, { start: 40, end: 40.5 }]
-  assert.deepEqual(withinTrim(intervals, edit), [intervals[1]])
-  assert.equal(withinTrim(intervals, edit)[0], intervals[1])
+test('trimming excludes complete hold spans outside the playable range without shifting target timestamps', () => {
+  const before: CueEvent = { kind: 'hold', joint: 'leftHand', time: 10.5, poseTime: 9.5,
+    duration: 1, x: .3, y: .4, confidence: 1, feature: {} }
+  const inside: CueEvent = { ...before, time: 11.5, poseTime: 10.5 }
+  const after: CueEvent = { ...before, time: 40.5, poseTime: 39.5 }
+  assert.deepEqual(visualCues(edit, [before, inside, after], 'hard', 'upper', false), [inside])
   assert.throws(() => validateSongEdit({ ...edit, end: 9 }))
   assert.throws(() => validateSongEdit({ ...edit, charts: { normal: [{ ...edit.charts.normal![0], time: 60 }] } }))
 })

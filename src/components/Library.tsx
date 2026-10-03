@@ -77,7 +77,7 @@ export default function Library({ intent = 'play', entries, stats, records = [],
                 <span className="library-sub">
                   {intent === 'edit' ? missing ? L('Edit beatmap · reselect video in editor', '编辑谱面 · 在编辑器中重新选择视频') : L('Edit beatmap', '编辑谱面') : missing ? L('Add video again to play', '重新添加视频以开始游戏') : when(entry.lastOpenedAt)}
                   {s ? ` · ${Math.max(1, Math.round(s.seconds / 60))} min · best ${s.bestMatch}` : ''}
-                  {best ? ` · ${T('record')} ${best.bestScore.toLocaleString()} · ${T('grade')} ${best.bestGrade}` : ''}
+                  {best ? ` · ${T('record')} ${best.bestScore.toLocaleString()} · ${T('grade')} ${best.bestGrade} · ${T(best.difficulty)} · ${T(best.focus === 'upper' ? 'Arms only' : best.focus === 'lower' ? 'Legs only' : 'Full body')} · ${best.trackHead ? 'Head on' : 'Head off'}` : ''}
                 </span>
               </span>
             </button>

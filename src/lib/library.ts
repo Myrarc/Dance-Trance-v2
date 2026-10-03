@@ -10,6 +10,7 @@
 
 const DB_NAME = 'dance-trainer'
 import type { ArcadeRecord } from '../game/records'
+import { hasScoringConfig, SCORING_VERSION } from '../game/records.ts'
 import type { PoseCorrection } from '../pose/poseCorrections'
 import { deleteDesktopSong, getDesktopSong, isDesktopApp, saveDesktopSong } from './desktopStorage.ts'
 
@@ -122,8 +123,9 @@ function tx<T>(store: string, mode: IDBTransactionMode, run: (s: IDBObjectStore)
       new Promise<T>((resolve, reject) => {
         const t = db.transaction(store, mode)
         const req = run(t.objectStore(store))
-        req.onsuccess = () => resolve(req.result)
-        req.onerror = () => reject(req.error)
+        t.oncomplete = () => resolve(req.result)
+        t.onerror = () => reject(t.error ?? req.error)
+        t.onabort = () => reject(t.error ?? new Error('Library save was aborted.'))
       }),
   )
 }
@@ -131,7 +133,7 @@ function tx<T>(store: string, mode: IDBTransactionMode, run: (s: IDBObjectStore)
 export async function listArcadeRecords(): Promise<ArcadeRecord[]> {
   try {
     return (await tx<ArcadeRecord[]>(ARCADE_RECORD_STORE, 'readonly', (store) => store.getAll()))
-      .filter((record) => record.scoringVersion === 2)
+      .filter((record) => record.scoringVersion === SCORING_VERSION && hasScoringConfig(record))
   } catch {
     return []
   }
@@ -140,7 +142,7 @@ export async function listArcadeRecords(): Promise<ArcadeRecord[]> {
 export async function getArcadeRecord(id: string): Promise<ArcadeRecord | null> {
   try {
     const record = await tx<ArcadeRecord | undefined>(ARCADE_RECORD_STORE, 'readonly', (store) => store.get(id))
-    return record?.scoringVersion === 2 ? record : null
+    return record?.scoringVersion === SCORING_VERSION ? record : null
   } catch {
     return null
   }
@@ -381,7 +383,8 @@ export async function addSectionPractice(
 
 export async function saveTrack(id: string, track: StoredTrack): Promise<void> {
   try {
-    await tx(TRACK_STORE, 'readwrite', (s) => s.put(track, id))
+    const existingTrack = await tx<StoredTrack | undefined>(TRACK_STORE, 'readonly', (s) => s.get(id))
+    await tx(TRACK_STORE, 'readwrite', (s) => s.put({ ...track, corrections: track.corrections ?? existingTrack?.corrections }, id))
     const existing = await tx<LibraryEntry | undefined>(META_STORE, 'readonly', (s) => s.get(id))
     if (existing) await putMeta({ ...existing, analysed: true })
   } catch {

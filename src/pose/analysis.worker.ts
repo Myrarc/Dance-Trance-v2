@@ -90,7 +90,7 @@ worker.onmessage = async (event: MessageEvent<StartMessage>) => {
     let decodedFrames = 0
     let inferredFrames = 0
     const modelStarted = performance.now()
-    landmarker = await createPoseLandmarker(1, 'lite', { wasmLoaderPath, wasmBinaryPath })
+    landmarker = await createPoseLandmarker(1, 'full', { wasmLoaderPath, wasmBinaryPath })
     modelMs = performance.now() - modelStarted
     let frame = 0
     let decodeStarted = performance.now()

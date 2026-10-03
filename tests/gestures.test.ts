@@ -224,6 +224,17 @@ test('select and back fire once until released', () => {
   assert.equal(advanceGestureHold({ ...ready, candidate: 'back' }, 'back', 5000).fired, null)
 })
 
+test('a held navigation pose can transition directly into selection', () => {
+  let state: GestureHold = { candidate: 'next', since: 0, latched: true, beeps: 3, lastBeepAt: 1000 }
+  state = advanceGestureHold(state, 'confirm', 1100)
+  assert.equal(state.candidate, 'confirm')
+  assert.equal(state.latched, false)
+  assert.equal(state.beep, 1)
+  state = advanceGestureHold(state, 'confirm', 1500)
+  state = advanceGestureHold(state, 'confirm', 1900)
+  assert.equal(advanceGestureHold(state, 'confirm', 2000).fired, 'confirm')
+})
+
 test('losing recognition after the first beep cancels the remaining beeps', () => {
   let state: GestureHold = { candidate: null, since: 0, latched: false, beeps: 0, lastBeepAt: 0 }
   state = advanceGestureHold(state, 'confirm', 0)

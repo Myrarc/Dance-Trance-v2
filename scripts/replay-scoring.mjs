@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { evaluateMotionInterval } from '../src/pose/motionScore.ts'
-import { advanceMotionRound } from '../src/pose/gameplay.ts'
+import { advanceMotionRound, SCORING_VERSION } from '../src/pose/gameplay.ts'
 import { decodeRecording, encodeRecording } from '../src/lib/scoringRecorder.ts'
 
 const path = process.argv[2]
@@ -15,7 +15,12 @@ for await (const line of createInterface({ input: createReadStream(path), crlfDe
   if (!line.trim()) continue
   const event = decodeRecording(line)
   if (event.sequence !== expectedSequence++) throw new Error('Missing or reordered recording events')
-  if (event.type === 'header') header = event.data
+  if (event.type === 'header') {
+    header = event.data
+    if (header.scoringVersion !== undefined && header.scoringVersion !== SCORING_VERSION) {
+      throw new Error(`Recording uses scoring v${header.scoringVersion}; this replay uses v${SCORING_VERSION}. Keep the original recording for comparison.`)
+    }
+  }
   if (event.type === 'end') ended = true
   if (event.type !== 'judgment') continue
   if (!header?.reference?.frames) throw new Error('Reference poses missing')

@@ -15,20 +15,13 @@ const dance = (range = 90, delay = 0) => Array.from({ length: 31 }, (_, index) =
   return { t: t + delay, feature: pose(Math.min(1, t / 0.5) * range) }
 })
 
-test('reference movement creates a scoring interval and a deliberate hold, without idle points', () => {
-  assert.ok(scoring)
-  const intervals = scoring.buildMotionIntervals(dance(), 'upper', false)
-  assert.equal(intervals[0].kind, 'move')
-  assert.equal(intervals.filter((interval) => interval.kind === 'move').length, 1)
-  assert.ok(intervals.some((interval) => interval.kind === 'hold' && interval.end - interval.start >= 0.6))
-  assert.ok(intervals.every((interval) => interval.start < 1.5))
-  assert.equal(scoring.buildMotionIntervals(dance(), 'lower', false).length, 0)
-})
+const hit = () => scoring!.motionIntervalsForCues([{ kind: 'spot', joint: 'leftHand', time: .5,
+  poseTime: .5, x: .3, y: .4, confidence: 1, feature: {} }])[0]
 
 test('a close learned move beats standing still or moving in the wrong direction', () => {
   assert.ok(scoring)
   const reference = dance()
-  const interval = scoring.buildMotionIntervals(reference, 'upper', false)[0]
+  const interval = hit()
   const learned = scoring.evaluateMotionInterval(interval, reference, dance(80), 'easy', 0, false)
   const still = scoring.evaluateMotionInterval(interval, reference, dance(0), 'easy', 0, false)
   const reversed = scoring.evaluateMotionInterval(interval, reference, dance(-90), 'easy', 0, false)
@@ -40,7 +33,7 @@ test('a close learned move beats standing still or moving in the wrong direction
 test('auto scoring accepts identical video motion and its mirrored version', () => {
   assert.ok(scoring)
   const reference = dance()
-  const interval = scoring.buildMotionIntervals(reference, 'upper', false)[0]
+  const interval = hit()
   const mirrored = reference.map((frame) => ({
     t: frame.t,
     feature: {
@@ -56,7 +49,7 @@ test('auto scoring accepts identical video motion and its mirrored version', () 
 test('the same late movement receives less credit on harder difficulties', () => {
   assert.ok(scoring)
   const reference = dance()
-  const interval = scoring.buildMotionIntervals(reference, 'upper', false)[0]
+  const interval = hit()
   const late = dance(90, 0.25)
   const easy = scoring.evaluateMotionInterval(interval, reference, late, 'easy', 0, false)
   const hard = scoring.evaluateMotionInterval(interval, reference, late, 'hard', 0, false)
@@ -65,21 +58,33 @@ test('the same late movement receives less credit on harder difficulties', () =>
   assert.ok(easy.lag > 0)
 })
 
-test('Hard gives a late correct move room while keeping wrong-direction motion a Miss', () => {
+test('Hard rewards on-time motion but a 600ms late correct move cannot earn Perfect', () => {
   assert.ok(scoring)
   const reference = dance()
-  const interval = scoring.buildMotionIntervals(reference, 'upper', false)[0]
-  const right = scoring.evaluateMotionInterval(interval, reference, dance(90, 0.6), 'hard', 0, false, true)
-  const wrong = scoring.evaluateMotionInterval(interval, reference, dance(-90, 0.6), 'hard', 0, false, true)
-  assert.deepEqual((['easy', 'normal', 'hard'] as const).map(scoring.motionLagLimit), [1.5, 1.1, 0.8])
-  assert.ok(right.quality !== null && right.quality >= 0.8)
+  const interval = hit()
+  const leadIn = Array.from({ length: 9 }, (_, index) => ({ t: index / 15, feature: pose(0) }))
+  const right = scoring.evaluateMotionInterval(interval, reference, [...leadIn, ...dance(90, 0.6)], 'hard', 0, false, true)
+  const wrong = scoring.evaluateMotionInterval(interval, reference, dance(-90), 'hard', 0, false, true)
+  const onTime = scoring.evaluateMotionInterval(interval, reference, reference, 'hard')
+  assert.ok(onTime.quality !== null && onTime.quality >= 0.8)
+  assert.ok(right.quality !== null && right.quality < 0.45)
   assert.ok(wrong.quality !== null && wrong.quality < 0.45)
+})
+
+test('a correctly detected movement outside the Perfect window receives timing-limited credit', () => {
+  assert.ok(scoring)
+  const reference = dance()
+  const interval = hit()
+  const evidence = scoring.evaluateMotionInterval(interval, reference, dance(90, 0.15), 'hard')
+  assert.ok(evidence.movement! > 0.95, 'movement remains accurate even when its timing is not Perfect')
+  assert.ok(evidence.timing! < 0.8)
+  assert.ok(evidence.quality! >= 0.45 && evidence.quality! < 0.8)
 })
 
 test('an established timing offset cannot jump to a lucky frame in one phrase', () => {
   assert.ok(scoring)
   const reference = dance()
-  const interval = scoring.buildMotionIntervals(reference, 'upper', false)[0]
+  const interval = hit()
   const reading = scoring.evaluateMotionInterval(interval, reference, dance(90, 1), 'easy', 0, false, true)
   assert.ok(Math.abs(reading.lag) <= 0.6)
 })
@@ -87,7 +92,7 @@ test('an established timing offset cannot jump to a lucky frame in one phrase', 
 test('brief surrounded tracking gaps bridge, but long gaps do not become invented motion', () => {
   assert.ok(scoring)
   const reference = dance()
-  const interval = scoring.buildMotionIntervals(reference, 'upper', false)[0]
+  const interval = hit()
   const brief = dance().filter((sample) => sample.t < 0.19 || sample.t > 0.32)
   const droppedFrames = dance().filter((sample) => sample.t <= 0.2 || sample.t >= 0.46)
   const long = dance().filter((sample) => sample.t < 0.12 || sample.t > 0.43)
@@ -101,7 +106,7 @@ test('brief surrounded tracking gaps bridge, but long gaps do not become invente
 test('weak landmark visibility reduces evidence coverage without changing the movement direction', () => {
   assert.ok(scoring)
   const reference = dance()
-  const interval = scoring.buildMotionIntervals(reference, 'upper', false)[0]
+  const interval = hit()
   const clear = scoring.evaluateMotionInterval(interval, reference, dance(), 'normal', 0, false)
   const weak = scoring.evaluateMotionInterval(interval, reference, dance().map((frame) => ({
     ...frame, visibility: { lUpperArm: 0.65, lForearm: 0.65 },

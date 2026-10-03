@@ -53,3 +53,38 @@ test('restart does not visit results and quitting resets the arcade flow', () =>
   assert.deepEqual(gameReducer(playing, { type: 'openHome' }), { screen: 'home', arcadePhase: 'setup', returnScreen: null })
   assert.deepEqual(gameReducer(playing, { type: 'quitHome' }), initialGameState)
 })
+
+test('camera setup returns to the selected round instead of resetting it to Home', () => {
+  for (const arcadePhase of ['setup', 'paused', 'results'] as const) {
+    const round = { ...initialGameState, screen: 'arcade' as const, arcadePhase }
+    const camera = gameReducer(round, { type: 'openCameraSetup' })
+    assert.equal(camera.screen, 'tracking')
+    assert.deepEqual(gameReducer(camera, { type: 'closeCameraSetup' }), round)
+  }
+})
+
+test('reconnecting a camera pauses an active round and keeps its destination', () => {
+  const round = { ...initialGameState, screen: 'arcade' as const, arcadePhase: 'playing' as const }
+  const camera = gameReducer(round, { type: 'openCameraSetup' })
+  assert.equal(camera.arcadePhase, 'paused')
+  const returned = gameReducer(camera, { type: 'closeCameraSetup' })
+  assert.equal(returned.screen, 'arcade')
+  assert.equal(returned.arcadePhase, 'paused')
+})
+
+test('camera diagnostics from Settings preserve the underlying practice or round', () => {
+  for (const screen of ['practice', 'arcade'] as const) {
+    const destination = { ...initialGameState, screen }
+    const settings = gameReducer(destination, { type: 'openSettings' })
+    const camera = gameReducer(settings, { type: 'openCameraSetup' })
+    assert.deepEqual(gameReducer(camera, { type: 'closeCameraSetup' }), destination)
+  }
+})
+
+test('opening Settings during play pauses the song until the player resumes', () => {
+  const round = { ...initialGameState, screen: 'arcade' as const, arcadePhase: 'playing' as const }
+  const settings = gameReducer(round, { type: 'openSettings' })
+  const returned = gameReducer(settings, { type: 'closeSettings' })
+  assert.equal(returned.screen, 'arcade')
+  assert.equal(returned.arcadePhase, 'paused')
+})

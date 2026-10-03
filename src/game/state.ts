@@ -16,6 +16,8 @@ export type GameAction =
   | { type: 'openPhotos' }
   | { type: 'openSettings' }
   | { type: 'closeSettings' }
+  | { type: 'openCameraSetup' }
+  | { type: 'closeCameraSetup' }
   | { type: 'startCountdown' }
   | { type: 'countdownFinished' }
   | { type: 'pause' }
@@ -51,8 +53,17 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case 'openSettings':
       return state.screen === 'settings'
         ? state
-        : { ...state, screen: 'settings', returnScreen: state.screen }
+        : { ...state, screen: 'settings', returnScreen: state.screen, arcadePhase: state.arcadePhase === 'playing' ? 'paused' : state.arcadePhase }
     case 'closeSettings':
+      return { ...state, screen: state.returnScreen ?? 'home', returnScreen: null }
+    case 'openCameraSetup':
+      return {
+        ...state,
+        screen: 'tracking',
+        arcadePhase: state.arcadePhase === 'playing' ? 'paused' : state.arcadePhase,
+        returnScreen: state.screen === 'settings' ? state.returnScreen : state.screen,
+      }
+    case 'closeCameraSetup':
       return { ...state, screen: state.returnScreen ?? 'home', returnScreen: null }
     case 'startCountdown':
     case 'restart':

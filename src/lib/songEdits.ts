@@ -7,6 +7,7 @@ export interface VisualMarker {
   id: string
   kind: 'spot' | 'hold' | 'clap'
   joint: HitJoint
+  /** Start time for holds; hit time for spots and claps. */
   time: number
   duration: number
   x: number
@@ -67,17 +68,19 @@ export async function saveSongEdit(id: string, edit: SongEdit) {
 }
 export function markerFromCue(cue: CueEvent, id: string): VisualMarker {
   return { id, kind: cue.kind, joint: cue.kind === 'clap' ? 'leftHand' : cue.joint,
-    time: cue.time, duration: cue.kind === 'hold' ? cue.duration : 0, x: cue.x, y: cue.y }
+    time: cue.kind === 'hold' ? cue.time - cue.duration : cue.time,
+    duration: cue.kind === 'hold' ? cue.duration : 0, x: cue.x, y: cue.y }
 }
 export function visualCues(edit: SongEdit | null | undefined, generated: CueEvent[], difficulty: Difficulty, focus: Focus, head: boolean): CueEvent[] {
   const authored = edit?.charts[difficulty]
   const cues: CueEvent[] = authored === undefined ? generated : authored.map((marker) => {
-    const base = { time: marker.time, poseTime: marker.time, x: marker.x, y: marker.y, confidence: 1, feature: {} }
+    const base = { id: marker.id, time: marker.time + (marker.kind === 'hold' ? marker.duration : 0),
+      poseTime: marker.time, x: marker.x, y: marker.y, confidence: 1, feature: {} }
     return marker.kind === 'clap' ? { ...base, kind: 'clap', expectedGap: 0 } :
       marker.kind === 'hold' ? { ...base, kind: 'hold', joint: marker.joint, duration: marker.duration } :
         { ...base, kind: 'spot', joint: marker.joint }
   })
-  return cues.filter((cue) => (!edit || (cue.time >= edit.start && cue.time <= edit.end)) &&
+  return cues.filter((cue) => (!edit || (cue.time - (cue.kind === 'hold' ? cue.duration : 0) >= edit.start && cue.time <= edit.end)) &&
     (cue.kind === 'clap' ? focus !== 'lower' : (head || cue.joint !== 'head') &&
       (focus === 'full' || (focus === 'upper' ? !cue.joint.endsWith('Foot') : cue.joint.endsWith('Foot')))))
     .sort((a, b) => a.time - b.time)
@@ -113,6 +116,3 @@ export function pasteMarkerSequence(sequence: MarkerSequenceItem[], at: number, 
   return sequence.map((marker) => ({ ...marker, id: makeId(), time: start + marker.time }))
 }
 export const isTrimmed = (edit: SongEdit | null) => !!edit && (edit.start > 0.01 || edit.end < edit.duration - 0.01)
-export function withinTrim<T extends { start: number; end: number }>(intervals: T[], edit?: Pick<SongEdit, 'start' | 'end'> | null): T[] {
-  return edit ? intervals.filter((interval) => interval.start >= edit.start && interval.end <= edit.end) : intervals
-}

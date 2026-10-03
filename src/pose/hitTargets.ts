@@ -6,6 +6,7 @@ export type HitJoint = 'head' | 'leftHand' | 'rightHand' | 'leftFoot' | 'rightFo
 export const HIT_LEAD_S = 0.8
 
 interface CueBase {
+  id?: string
   kind: 'spot' | 'hold' | 'clap'
   time: number
   poseTime: number
@@ -66,11 +67,11 @@ const POINTS: Record<HitJoint, number[]> = {
 }
 
 const MOVE_THRESHOLD: Record<HitJoint, number> = {
-  head: 0.04,
-  leftHand: 0.08,
-  rightHand: 0.08,
-  leftFoot: 0.055,
-  rightFoot: 0.055,
+  head: 0.2,
+  leftHand: 0.4,
+  rightHand: 0.4,
+  leftFoot: 0.275,
+  rightFoot: 0.275,
 }
 
 const KIND_PRIORITY: Record<CueEvent['kind'], number> = {
@@ -188,7 +189,9 @@ function buildSpots(track: PoseTrack): SpotCue[] {
       const current = point(track, frame, joint)
       const after = point(track, frame + 1, joint)
       if (!before || !current || !after) continue
-      const travelled = distance(lastPoint, current)
+      const scale = bodyScale(track, frame)
+      if (!scale) continue
+      const travelled = distance(lastPoint, current) / scale
       if (travelled < MOVE_THRESHOLD[joint]) continue
       const feature = featureAt(track, frame)
       const movement = hitMovementDegrees(featureAt(track, lastFrame), feature, joint, false)
@@ -196,10 +199,10 @@ function buildSpots(track: PoseTrack): SpotCue[] {
 
       const into = { x: current.x - before.x, y: current.y - before.y }
       const out = { x: after.x - current.x, y: after.y - current.y }
-      const speedIn = Math.hypot(into.x, into.y)
-      const speedOut = Math.hypot(out.x, out.y)
-      const reversed = speedIn > 0.002 && speedOut > 0.002 && into.x * out.x + into.y * out.y < 0
-      const slowed = speedIn > 0.003 && speedOut < speedIn * 0.55
+      const speedIn = Math.hypot(into.x, into.y) / scale
+      const speedOut = Math.hypot(out.x, out.y) / scale
+      const reversed = speedIn > 0.01 && speedOut > 0.01 && into.x * out.x + into.y * out.y < 0
+      const slowed = speedIn > 0.015 && speedOut < speedIn * 0.55
       if (!reversed && !slowed && frame - lastFrame < forceAfter) continue
 
       const time = frame / track.fps
@@ -317,7 +320,9 @@ function snapToBeat(track: PoseTrack, cue: CueEvent): CueEvent | null {
   const previousBeat = track.beats[Math.max(0, nearest - 1)]
   const nextBeat = track.beats[Math.min(track.beats.length - 1, nearest + 1)]
   const beatGap = Math.max(0.25, Math.min(beat - previousBeat || Infinity, nextBeat - beat || Infinity))
-  return Math.abs(beat - cue.time) <= Math.min(0.2, beatGap * 0.4) ? { ...cue, time: beat } : null
+  // Off-beat movement remains a playable target rather than vanishing when
+  // detection or a sparse manual beat map does not explain its timing.
+  return Math.abs(beat - cue.time) <= Math.min(0.2, beatGap * 0.4) ? { ...cue, time: beat } : cue
 }
 
 function cueChannel(cue: CueEvent) {
@@ -364,13 +369,13 @@ function filterDifficulty(track: PoseTrack, cues: CueEvent[], difficulty: Diffic
 }
 
 /** A note owns each limb it uses for its full on-screen span. Charts arrive in time order. */
-export function removeOverlappingLimbCues(cues: CueEvent[]): CueEvent[] {
+export function removeOverlappingLimbCues(cues: CueEvent[], judgmentGrace = 0.12): CueEvent[] {
   const busyUntil = new Map<HitJoint, number>()
   return cues.filter((cue) => {
     const limbs: HitJoint[] = cue.kind === 'clap' ? ['leftHand', 'rightHand'] : [cue.joint]
     const visibleFrom = cue.time - (cue.kind === 'hold' ? cue.duration : 0) - HIT_LEAD_S
     if (limbs.some((limb) => visibleFrom < (busyUntil.get(limb) ?? -Infinity))) return false
-    for (const limb of limbs) busyUntil.set(limb, cue.time + 0.12)
+    for (const limb of limbs) busyUntil.set(limb, cue.time + judgmentGrace)
     return true
   })
 }
@@ -381,6 +386,7 @@ export function buildCueChart(
   difficulty: Difficulty = 'normal',
   trackHead = true,
   focus: Focus = 'full',
+  judgmentGrace = 0.12,
 ): CueEvent[] {
   const spots = buildSpots(track)
   const holds = buildHolds(track, spots)
@@ -400,44 +406,20 @@ export function buildCueChart(
     .filter((cue) => focus === 'full' || (focus === 'upper'
       ? cue.kind === 'clap' || cue.joint === 'head' || cue.joint === 'leftHand' || cue.joint === 'rightHand'
       : cue.kind !== 'clap' && (cue.joint === 'leftFoot' || cue.joint === 'rightFoot')))
-  return removeOverlappingLimbCues(filterDifficulty(track, snapped, difficulty))
+  return removeOverlappingLimbCues(filterDifficulty(track, snapped, difficulty), judgmentGrace)
 }
 
-/** One imminent cue per body channel keeps the playfield readable. */
-export function upcomingCues(cues: CueEvent[], time: number, leadSeconds: number) {
-  const upcoming = new Map<string, CueEvent>()
-  for (const cue of cues) {
+/** Practice shows one cue per channel; Arcade must show every authored note it judges. */
+export function upcomingCues(cues: CueEvent[], time: number, leadSeconds: number, judgmentGrace = 0.12, showAll = false) {
+  const visible = cues.filter((cue) => {
     const visibleFrom = cue.kind === 'hold' ? cue.time - cue.duration - leadSeconds : cue.time - leadSeconds
-    if (time < visibleFrom || time > cue.time + 0.12) continue
+    return time >= visibleFrom && time <= cue.time + judgmentGrace
+  })
+  if (showAll) return visible
+  const upcoming = new Map<string, CueEvent>()
+  for (const cue of visible) {
     const channel = cueChannel(cue)
     if (!upcoming.has(channel)) upcoming.set(channel, cue)
   }
   return [...upcoming.values()]
-}
-
-/** Feedback belongs on a circle the player could see when the phrase was judged. */
-export function nearestVisibleCue(cues: CueEvent[], time: number, leadSeconds: number, keys?: string[]): CueEvent | null {
-  const visible = upcomingCues(cues, time, leadSeconds).filter((cue) => cueMatchesKeys(cue, keys))
-  return visible.reduce<CueEvent | null>((nearest, cue) =>
-    !nearest || Math.abs(cue.time - time) < Math.abs(nearest.time - time) ? cue : nearest, null)
-}
-
-function cueMatchesKeys(cue: CueEvent, keys?: string[]) {
-  if (!keys?.length) return true
-  if (cue.kind === 'clap') return keys.some((key) => key.includes('UpperArm') || key.includes('Forearm'))
-  const prefix = cue.joint === 'head' ? 'head'
-    : cue.joint === 'leftHand' ? 'l' : cue.joint === 'rightHand' ? 'r'
-      : cue.joint === 'leftFoot' ? 'l' : 'r'
-  if (prefix === 'head') return keys.includes('head')
-  const limb = cue.joint.endsWith('Hand') ? ['UpperArm', 'Forearm'] : ['Thigh', 'Shin']
-  return limb.some((part) => keys.includes(`${prefix}${part}`))
-}
-
-/** Match a scored movement to its own reference cue without borrowing a later marker. */
-export function nearestScoredCue(cues: CueEvent[], referenceTime: number, judgedTime: number, keys?: string[]) {
-  const candidates = cues.filter((cue) => cue.time <= judgedTime + 0.001
-    && Math.abs(cue.poseTime - referenceTime) <= 0.65
-    && cueMatchesKeys(cue, keys))
-  return candidates.reduce<CueEvent | null>((nearest, cue) =>
-    !nearest || Math.abs(cue.poseTime - referenceTime) < Math.abs(nearest.poseTime - referenceTime) ? cue : nearest, null)
 }

@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 import { newMotionRound } from '../src/pose/gameplay.ts'
 
-test('results make gesture choices prominent without the visual-guide explanation', async () => {
+test('results offer a photo opt-out and explain when menu gestures become available', async () => {
   const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
   try {
     const { ResultsScreen } = await server.ssrLoadModule('/src/components/GameShell.tsx')
@@ -22,7 +22,9 @@ test('results make gesture choices prominent without the visual-guide explanatio
       onHome: () => {},
     }))
 
-    assert.match(html, /class="result-gesture-banner"/)
+    assert.match(html, /result-gesture-banner is-suspended/)
+    assert.match(html, /Skip photo/)
+    assert.match(html, /Menu gestures resume after the photo/)
     assert.match(html, /Right hand up - Replay/)
     assert.match(html, /Left hand up - Choose song/)
     assert.doesNotMatch(html, /Your next move/)

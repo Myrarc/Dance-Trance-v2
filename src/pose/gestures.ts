@@ -136,13 +136,16 @@ export function advanceGestureHold(
   if (!gesture) {
     return { candidate: null, since: 0, latched: false, beeps: 0, lastBeepAt: 0, progress: 0, beep: null, fired: null }
   }
-  if (state.latched) {
+  const selectingAfterNavigation = state.latched &&
+    (state.candidate === 'previous' || state.candidate === 'next') &&
+    gesture === 'confirm'
+  if (state.latched && !selectingAfterNavigation) {
     if ((gesture === 'previous' || gesture === 'next') && state.candidate === gesture && now - state.lastBeepAt >= GESTURE_REPEAT_MS) {
       return { ...state, lastBeepAt: now, progress: 1, beep: null, fired: gesture }
     }
     return { ...state, progress: 1, beep: null, fired: null }
   }
-  if (state.candidate !== gesture) {
+  if (selectingAfterNavigation || state.candidate !== gesture) {
     return { candidate: gesture, since: now, latched: false, beeps: 1, lastBeepAt: now, progress: 0, beep: 1, fired: null }
   }
   const progress = Math.min(1, Math.max(0, (now - state.since) / GESTURE_HOLD_MS))

@@ -53,12 +53,40 @@ test('version six preserves the library and adds durable new records, photos, an
   assert.equal(legacySong.name, 'Legacy Song')
 
   const record: ArcadeRecord = {
-    scoringVersion: 2,
-    id: 'v2:song:easy:1', videoId: 'song', difficulty: 'easy', playerSlot: 1,
+    scoringVersion: 3, focus: 'full', trackHead: false,
+    id: 'v3:song:easy:full:body:1', videoId: 'song', difficulty: 'easy', playerSlot: 1,
     bestScore: 500, bestAccuracy: 75, bestGrade: 'B', maxCombo: 5,
     playCount: 1, updatedAt: 123,
   }
   await putArcadeRecord(record)
   assert.deepEqual(await getArcadeRecord(record.id), record)
   assert.deepEqual(await listArcadeRecords(), [record])
+  const old = { ...record, id: 'v2:song:easy:full:body:1', scoringVersion: 2 as const }
+  await putArcadeRecord(old)
+  assert.equal(await getArcadeRecord(old.id), null, 'old scores do not compete with cue scoring')
+  const stored = await new Promise((resolve, reject) => {
+    const request = upgraded.transaction('arcadeRecords').objectStore('arcadeRecords').get(old.id)
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  assert.deepEqual(stored, old, 'versioning preserves the original personal best on disk')
+  assert.deepEqual(await listArcadeRecords(), [record])
+})
+
+test('a request that succeeds inside an aborted transaction never reports a saved record', async () => {
+  const db = await openLibraryDatabase()
+  const transaction = db.transaction.bind(db)
+  db.transaction = (...args: Parameters<typeof transaction>) => {
+    const pending = transaction(...args)
+    if (args[1] === 'readwrite') pending.addEventListener('success', () => pending.abort(), { capture: true, once: true })
+    return pending
+  }
+  try {
+    await assert.rejects(putArcadeRecord({
+      scoringVersion: 3, id: 'aborted', videoId: 'song', difficulty: 'normal', playerSlot: 1,
+      focus: 'full', trackHead: false, bestScore: 500, bestAccuracy: 75, bestGrade: 'B',
+      maxCombo: 5, playCount: 1, updatedAt: 123,
+    }), /aborted/i)
+    assert.equal(await getArcadeRecord('aborted'), null)
+  } finally { db.transaction = transaction }
 })

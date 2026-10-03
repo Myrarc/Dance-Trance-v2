@@ -1,5 +1,5 @@
-import { createPlaykit, type PlaykitUser } from './lib/playkit'
-import { mergeCloudRecordSets, type CloudArcadeRecord } from './game/records'
+import { createPlaykit, SaveConflictError, type PlaykitUser } from './lib/playkit'
+import { hasScoringConfig, mergeCloudRecordSets, SCORING_VERSION, type CloudArcadeRecord } from './game/records'
 
 /**
  * Optional accounts. With VITE_PLAYKIT_URL unset the trainer is entirely local:
@@ -24,7 +24,10 @@ export const playkit = accountsEnabled
   ? createPlaykit({
       baseUrl,
       gameId: 'dance-trainer',
-      onAuthChange: (user) => authListeners.forEach((fn) => fn(user)),
+      onAuthChange: (user) => {
+        authListeners.forEach((fn) => fn(user))
+        publishSyncState()
+      },
     })
   : null
 
@@ -65,24 +68,65 @@ export interface PracticeSave {
   arcadeRecords?: CloudArcadeRecord[]
 }
 
-/**
- * Read-modify-write against the single save blob. Everything that syncs goes
- * through here so two features can never race each other's version.
- */
+let saveTail = Promise.resolve()
+type SaveUpdate = { userId: string; mutate: (save: PracticeSave) => PracticeSave }
+let failedSaves: SaveUpdate[] = []
+const syncListeners = new Set<(pending: boolean) => void>()
+const publishSyncState = () => {
+  const pending = failedSaves.some((update) => update.userId === playkit?.user?.id)
+  syncListeners.forEach((listener) => listener(pending))
+}
+
+export function onSyncPending(listener: (pending: boolean) => void) {
+  syncListeners.add(listener)
+  listener(failedSaves.some((update) => update.userId === playkit?.user?.id))
+  return () => { syncListeners.delete(listener) }
+}
+
+/** Serialize this device's writes; re-read when another device wins a version. */
 async function updateSave(mutate: (save: PracticeSave) => PracticeSave, reportFailure = false): Promise<void> {
-  if (!playkit || !playkit.isSignedIn) return
+  const userId = playkit?.user?.id
+  if (!playkit || !playkit.isSignedIn || !userId) return
+  const update = saveTail.then(async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (playkit.user?.id !== userId) throw new Error('Account changed before sync')
+      try {
+        const existing = await playkit.loadProgress<PracticeSave>()
+        if (playkit.user?.id !== userId) throw new Error('Account changed during sync')
+        const current = existing?.data ?? { sessions: [] }
+        await playkit.saveProgress(mutate({
+          sessions: current.sessions ?? [],
+          library: current.library,
+          arcadeRecords: current.arcadeRecords,
+        }), existing?.version ?? 0)
+        return
+      } catch (error) {
+        if (!(error instanceof SaveConflictError) || attempt === 2) throw error
+      }
+    }
+  })
+  saveTail = update.catch(() => undefined)
   try {
-    const existing = await playkit.loadProgress<PracticeSave>()
-    const current: PracticeSave = existing?.data ?? { sessions: [] }
-    await playkit.saveProgress(mutate({
-      sessions: current.sessions ?? [],
-      library: current.library,
-      arcadeRecords: current.arcadeRecords,
-    }), existing?.version)
+    await update
   } catch (error) {
+    failedSaves.push({ userId, mutate })
+    publishSyncState()
     if (reportFailure) throw error
-    // Practice data is a bonus; never let a failed sync surface mid-session.
   }
+}
+
+/** Keep failed operations available for an explicit retry while the app is open. */
+export async function retryFailedSaves(): Promise<void> {
+  const userId = playkit?.user?.id
+  const retry = failedSaves.filter((update) => update.userId === userId)
+  failedSaves = failedSaves.filter((update) => update.userId !== userId)
+  try {
+    for (const update of retry) {
+      // A sign-out while retrying must not transfer another player's history.
+      if (playkit?.user?.id !== userId) failedSaves.push(update)
+      else await updateSave(update.mutate)
+    }
+  } finally { publishSyncState() }
 }
 
 async function readSave(): Promise<PracticeSave | null> {
@@ -104,7 +148,8 @@ async function readSave(): Promise<PracticeSave | null> {
 export async function recordSession(session: PracticeSession): Promise<void> {
   await updateSave((save) => ({
     ...save,
-    sessions: [...save.sessions, session].slice(-200),
+    sessions: save.sessions.some((saved) => saved.at === session.at && saved.videoId === session.videoId)
+      ? save.sessions : [...save.sessions, session].slice(-200),
   }))
 }
 
@@ -145,7 +190,7 @@ export async function syncArcadeRecords(records: CloudArcadeRecord[]): Promise<v
 }
 
 export async function loadArcadeRecords(): Promise<CloudArcadeRecord[]> {
-  return ((await readSave())?.arcadeRecords ?? []).filter((record) => record.scoringVersion === 2)
+  return ((await readSave())?.arcadeRecords ?? []).filter((record) => record.scoringVersion === SCORING_VERSION && hasScoringConfig(record))
 }
 
 export interface VideoStats {

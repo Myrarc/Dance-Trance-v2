@@ -23,14 +23,13 @@ import { LandmarkSmoother } from '../pose/filter'
 import { sampleTrack, type PoseTrack } from '../pose/track'
 import {
   buildCueChart,
-  nearestScoredCue,
   upcomingCues,
   type CueEvent,
   type Difficulty,
 } from '../pose/hitTargets'
 import {
   HIT_LEAD_S,
-  HIT_BURST_DURATION_S,
+  activeHitFeedback,
   cueColor,
   drawArcadeHitBurst,
   drawHitRail,
@@ -39,9 +38,11 @@ import {
   drawCueGlyph,
 } from '../pose/arcade'
 import SectionList from './SectionList'
+import { RoundSignal } from './ArcadeFeedback'
+import { motionLagLimit } from '../pose/motionScore'
 import { visualCues, type SongEdit } from '../lib/songEdits'
 import { activeSection, newSectionId, type Section, type SectionStat } from '../lib/library'
-import type { GamePhase, HitGrade } from '../pose/gameplay'
+import type { GamePhase, HitFeedback } from '../pose/gameplay'
 
 export interface TargetPose {
   feature: PoseFeature | null
@@ -61,6 +62,8 @@ export interface TargetPose {
 const LAG_WINDOW_S = 1
 
 interface Props {
+  cues?: CueEvent[]
+  reducedEffects?: boolean
   songEdit?: SongEdit | null
   src: string
   playbackRef?: React.MutableRefObject<HTMLVideoElement | null>
@@ -80,8 +83,7 @@ interface Props {
   gamePhase?: GamePhase
   countdown?: number
   gameRun?: number
-  onGameEnd?: () => void
-  hitFeedback?: { id: number; grade: HitGrade; time: number; referenceTime: number; keys: string[] } | null
+  hitFeedback?: HitFeedback[]
 }
 
 
@@ -150,6 +152,8 @@ function fmt(t: number) {
 }
 
 export default function VideoPanel({
+  cues: preparedCues,
+  reducedEffects = false,
   src,
   playbackRef,
   targetRef,
@@ -168,30 +172,28 @@ export default function VideoPanel({
   gamePhase = 'lobby',
   countdown = 3,
   gameRun = 0,
-  onGameEnd,
   hitFeedback,
 }: Props) {
   const trackRef = useRef<PoseTrack | null>(null)
   trackRef.current = track ?? null
   const cueChart = useMemo(
-    () => visualCues(songEdit, track ? buildCueChart(track, difficulty, trackHead, focus) : [], difficulty, focus, trackHead),
-    [difficulty, focus, track, trackHead, songEdit],
+    () => preparedCues ?? visualCues(songEdit, track ? buildCueChart(track, difficulty, trackHead, focus) : [], difficulty, focus, trackHead),
+    [preparedCues, difficulty, focus, track, trackHead, songEdit],
   )
   const cueChartRef = useRef(cueChart)
   cueChartRef.current = cueChart
   const hitFeedbackRef = useRef(hitFeedback)
   hitFeedbackRef.current = hitFeedback
+  const judgmentGraceRef = useRef(0.12)
+  judgmentGraceRef.current = preparedCues ? motionLagLimit(difficulty) + 0.04 : 0.12
+  const sharedChartRef = useRef(false)
+  sharedChartRef.current = preparedCues !== undefined
   const reduceMotionRef = useRef(false)
   const focusRef = useRef<Focus>('full')
   focusRef.current = focus
   const sectionsRef = useRef<Section[]>([])
   sectionsRef.current = sections
   const videoRef = useRef<HTMLVideoElement>(null)
-  const gameEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => () => {
-    if (gameEndTimerRef.current !== null) clearTimeout(gameEndTimerRef.current)
-    gameEndTimerRef.current = null
-  }, [src, gameRun, gamePhase])
   const setVideoRef = useCallback((video: HTMLVideoElement | null) => {
     videoRef.current = video
     if (playbackRef) playbackRef.current = video
@@ -259,7 +261,7 @@ export default function VideoPanel({
     // A completed analysis or preference change can arrive while playback is paused at the same
     // timestamp; force the new track and its hit markers to paint once.
     lastTimeRef.current = -1
-  }, [difficulty, focus, track, trackHead])
+  }, [difficulty, focus, track, trackHead, cueChart, hitFeedback])
 
   useEffect(() => {
     const video = videoRef.current
@@ -305,12 +307,12 @@ export default function VideoPanel({
   useEffect(() => {
     const query = window.matchMedia('(prefers-reduced-motion: reduce)')
     const update = () => {
-      reduceMotionRef.current = query.matches
+      reduceMotionRef.current = query.matches || reducedEffects
     }
     update()
     query.addEventListener('change', update)
     return () => query.removeEventListener('change', update)
-  }, [])
+  }, [reducedEffects])
 
   /** Re-frame from scratch: the old region no longer describes the subject. */
   const resetFraming = () => {
@@ -405,6 +407,7 @@ export default function VideoPanel({
     let raf = 0
     let hadPose = false
     let lastTry = 0
+    let feedbackPainted = false
     const loop = () => {
       raf = requestAnimationFrame(loop)
       const v = videoRef.current
@@ -421,7 +424,11 @@ export default function VideoPanel({
       // first frame of a never-played video can decode as empty for MediaPipe.
       const retry = !hadPose && performance.now() - lastTry > 250
       const settling = settleRef.current > 0
-      if (v.currentTime === lastTimeRef.current && !clicked && !retry && !settling) return
+      const now = performance.now()
+      const activeFeedback = activeHitFeedback(hitFeedbackRef.current ?? [], now)
+      if (v.currentTime === lastTimeRef.current && !clicked && !retry && !settling
+        && !activeFeedback.length && !feedbackPainted) return
+      feedbackPainted = activeFeedback.length > 0
       if (settling) settleRef.current--
       lastTimeRef.current = v.currentTime
       lastTry = performance.now()
@@ -599,12 +606,7 @@ export default function VideoPanel({
       lastPoseRef.current = selected
 
       const markerRadius = Math.max(28, vh * 0.052)
-      const upcoming = upcomingCues(cueChartRef.current, v.currentTime, HIT_LEAD_S)
-      const feedback = hitFeedbackRef.current
-      const feedbackAge = feedback ? v.currentTime - feedback.time : Infinity
-      const feedbackActive = feedback && feedbackAge >= 0 && feedbackAge <= HIT_BURST_DURATION_S
-      const feedbackCue = feedbackActive
-        ? nearestScoredCue(cueChartRef.current, feedback.referenceTime, feedback.time, feedback.keys) : null
+      const upcoming = upcomingCues(cueChartRef.current, v.currentTime, HIT_LEAD_S, judgmentGraceRef.current, sharedChartRef.current)
       const points = upcoming.map((target) => ({
         target,
         x: (mirrorRef.current ? 1 - target.x : target.x) * vw,
@@ -637,18 +639,14 @@ export default function VideoPanel({
         )
         drawCueGlyph(hitCtx, target, x, y, markerRadius, v.currentTime)
       }
-      if (feedback && feedbackCue) {
-        const x = (mirrorRef.current ? 1 - feedbackCue.x : feedbackCue.x) * vw
-        const y = feedbackCue.y * vh
-        if (!upcoming.includes(feedbackCue)) {
-          drawArcadeHitMarker(hitCtx, x, y, markerRadius, cueColor(feedbackCue),
-            feedbackCue.time - v.currentTime, reduceMotionRef.current)
-          drawCueGlyph(hitCtx, feedbackCue, x, y, markerRadius, v.currentTime)
-        }
-        drawArcadeHitBurst(hitCtx, x, y, markerRadius, feedback.grade, feedbackAge, reduceMotionRef.current)
-        drawArcadeHitLabel(hitCtx, x, y, markerRadius, feedback.grade)
-      } else if (feedbackActive) {
-        drawArcadeHitLabel(hitCtx, vw / 2, vh * 0.8, markerRadius, feedback.grade)
+      for (const feedback of activeFeedback) {
+        const cue = feedback.cue
+        const x = (mirrorRef.current ? 1 - cue.x : cue.x) * vw
+        const y = cue.y * vh
+        const otherPlayers = activeFeedback.some((hit) => hit.cue.id === cue.id && hit.player !== feedback.player)
+        const labelY = y + (otherPlayers ? (feedback.player === 1 ? -1 : 1) * markerRadius * 0.65 : 0)
+        drawArcadeHitBurst(hitCtx, x, y, markerRadius, feedback.grade, (now - feedback.at) / 1000, reduceMotionRef.current)
+        drawArcadeHitLabel(hitCtx, x, labelY, markerRadius, feedback.grade, feedback.player)
       }
     }
 
@@ -805,10 +803,11 @@ export default function VideoPanel({
     const v = videoRef.current
     if (!v) return
     setCurrentTime(v.currentTime)
-    if (gamePhase === 'playing' && songEdit && v.currentTime >= songEdit.end && gameEndTimerRef.current === null) {
-      v.pause()
-      v.currentTime = songEdit.end
-      gameEndTimerRef.current = setTimeout(() => onGameEnd?.(), 1700)
+    if (gamePhase === 'playing' && songEdit && v.currentTime >= songEdit.end) {
+      if (!v.paused) {
+        v.pause()
+        v.currentTime = songEdit.end
+      }
       return
     }
     if (loopA !== null && loopB !== null && v.currentTime > loopB) {
@@ -876,7 +875,7 @@ export default function VideoPanel({
           {analysing == null && analysisMessage && analysisMessage}
           {modelState === 'ready' && analysing == null && !analysisMessage && track &&
             (cueChart.length === 0
-              ? L('No dance moves found. Try a different video.', '未找到舞蹈动作，请试试其他视频。')
+              ? T('No visual cues for these options.')
               : L(`${cueChart.length} moves ready`, `${cueChart.length} 个动作已准备好`))}
           {modelState === 'ready' && analysing == null && !analysisMessage && !track && locked && T('Following one dancer · click another to switch')}
           {modelState === 'ready' && analysing == null && !analysisMessage && !track && !locked && personCount > 1 && T('Multiple dancers · click the one to follow')}
@@ -905,12 +904,6 @@ export default function VideoPanel({
           onTimeUpdate={onTimeUpdate}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
-          onEnded={() => {
-            if (gamePhase !== 'playing' || !onGameEnd) return
-            if (gameEndTimerRef.current !== null) clearTimeout(gameEndTimerRef.current)
-            // The camera keeps sampling during the Easy timing grace period.
-            gameEndTimerRef.current = setTimeout(onGameEnd, 900)
-          }}
         />
         <canvas
           ref={canvasRef}
@@ -920,9 +913,7 @@ export default function VideoPanel({
         />
         <canvas ref={hitCanvasRef} className="hit-canvas" aria-hidden="true" />
         </div>
-        {gamePhase === 'countdown' && (
-          <div key={countdown} className="game-countdown" aria-live="assertive">{countdown}</div>
-        )}
+        <RoundSignal phase={gamePhase} countdown={countdown} />
       </div>
 
       <div className="transport">

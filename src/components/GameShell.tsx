@@ -51,12 +51,13 @@ export function Brand({ compact = false }: { compact?: boolean }) {
   )
 }
 
-export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, account }: {
+export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, onChoose, account }: {
   trackingReady: boolean
   selected: number
   motion: { direction: 'left' | 'right'; turn: number } | null
   onMove: (direction: 'left' | 'right') => void
   onSelect: () => void
+  onChoose: (index: number) => void
   account: ReactNode
 }) {
   const centerRef = useRef<HTMLButtonElement>(null)
@@ -85,7 +86,7 @@ export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, 
     }}>
       <div className="home-topline">
         <Brand />
-        <div className="home-top-actions" data-gesture-skip><div className="home-account">{account}</div></div>
+        <div className="home-top-actions" data-gesture-skip><nav className="home-tools" aria-label="Tools">{[2, 3, 4].map((index) => <button className="btn subtle" key={index} onClick={() => onChoose(index)}>{options[index].title}</button>)}</nav><div className="home-account">{account}</div></div>
       </div>
       <section className="home-hero">
         <div className="home-copy">
@@ -117,33 +118,12 @@ export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, 
           </button>
         })}
       </nav>
+      <p className="home-carousel-position" aria-live="polite">{selected + 1} / {options.length} · {options[selected].title}</p>
       <div className="home-mobile-controls">
         <button className="btn" onClick={() => onMove('left')}>{L('← Previous', '← 上一个')}</button>
         <button className="btn" onClick={() => onMove('right')}>{L('Next →', '下一个 →')}</button>
       </div>
     </main>
-  )
-}
-
-export function WelcomeOverlay({ onStart, onExplore }: {
-  onStart: () => void
-  onExplore: () => void
-}) {
-  const modalRef = useRef<HTMLElement>(null)
-  useModalFocus(modalRef)
-
-  return (
-    <section ref={modalRef} className="welcome-overlay" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
-      <div className="welcome-card">
-        <span className="welcome-step">{T('Ready when you are')}</span>
-        <h2 id="welcome-title">{T('Your video.')}<br />{T('Your moves.')}<br />{T('Your arcade.')}</h2>
-        <p>{L('Turn a dance video into a one or two-player rhythm game.', '把舞蹈视频变成单人或双人节奏游戏。')}</p>
-        <div className="welcome-actions">
-          <button className="btn primary" onClick={onStart}>{T('Let’s dance')}</button>
-          <button className="btn subtle" onClick={onExplore}>{T('Explore first')}</button>
-        </div>
-      </div>
-    </section>
   )
 }
 
@@ -177,7 +157,8 @@ export function SettingsScreen({ settings, onChange, onClose, onOpenBeatLab, onO
 
   return (
     <main ref={modalRef} className="destination-screen settings-screen" role="dialog" aria-modal="true" aria-labelledby="settings-title" data-gesture-surface onKeyDown={(event) => {
-      if (event.key === 'Escape') onClose()
+      event.stopPropagation()
+      if (event.key === 'Escape') { event.preventDefault(); onClose(); return }
       if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || event.target instanceof HTMLInputElement) return
       if (event.key.toLowerCase() === 'z') beatSequenceRef.current = performance.now()
       else if (event.key.toLowerCase() === 'x' && beatSequenceRef.current > 0 && performance.now() - beatSequenceRef.current <= 1000) { beatSequenceRef.current = 0; onOpenBeatLab?.() }
@@ -270,7 +251,7 @@ export interface ResultRecord {
   isNewBest: boolean
 }
 
-export function ResultsScreen({ players, difficulty, records, reducedEffects, photoRound, photoPrompt, onCapture, onReplay, onChooseSong, onHome }: {
+export function ResultsScreen({ players, difficulty, records, reducedEffects, photoRound, photoPrompt, onCapture, onPhotoPendingChange, onReplay, onChooseSong, onHome }: {
   players: PlayerRound[]
   difficulty: Difficulty
   records: (ResultRecord | null)[]
@@ -278,20 +259,28 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
   photoRound: number
   photoPrompt: string
   onCapture: () => Promise<void>
+  onPhotoPendingChange?: (pending: boolean) => void
   onReplay: () => void
   onChooseSong: () => void
   onHome: () => void
 }) {
   const [photoTime, setPhotoTime] = useState(0)
-  const [photoStatus, setPhotoStatus] = useState<'waiting' | 'saving' | 'saved' | 'error' | 'cancelled'>('waiting')
+  const [photoStatus, setPhotoStatus] = useState<'waiting' | 'saving' | 'saved' | 'error' | 'cancelled' | 'skipped'>('waiting')
   const [flash, setFlash] = useState(false)
   const captureRef = useRef(onCapture)
   captureRef.current = onCapture
+  const reducedEffectsRef = useRef(reducedEffects)
+  reducedEffectsRef.current = reducedEffects
+  const cancelPhotoRef = useRef<(() => void) | null>(null)
+  useEffect(() => {
+    onPhotoPendingChange?.(photoStatus === 'waiting' || photoStatus === 'saving')
+  }, [photoStatus, onPhotoPendingChange])
   useEffect(() => {
     let active = true
     let pending = true
     let startedAt = performance.now()
     let timer = 0
+    cancelPhotoRef.current = () => { pending = false; window.clearInterval(timer) }
     const tick = () => {
       if (!pending) return
       if (document.hidden) {
@@ -306,7 +295,7 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
       pending = false
       window.clearInterval(timer)
       setPhotoStatus('saving')
-      if (!reducedEffects) setFlash(true)
+      if (!reducedEffectsRef.current) setFlash(true)
       void captureRef.current().then(() => {
         if (!active) return
         setPhotoStatus('saved')
@@ -326,10 +315,11 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
       active = false
+      cancelPhotoRef.current = null
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [photoRound, reducedEffects])
+  }, [photoRound])
   useEffect(() => {
     if (!flash) return
     const timer = window.setTimeout(() => setFlash(false), 1500)
@@ -342,6 +332,10 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
       setPhotoStatus('saved')
     }).catch(() => setPhotoStatus('error'))
   }
+  const skipPhoto = () => {
+    cancelPhotoRef.current?.()
+    setPhotoStatus('skipped')
+  }
   const stage = photoStage(photoTime)
   return (
     <section className="results-card" aria-labelledby="results-title">
@@ -353,8 +347,8 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
           const movements = movementResults(player)
           const grade: Grade = gradeFromAccuracy(resultAccuracy)
           return (
-            <article key={index}>
-              {records[index]?.isNewBest && <span className="new-record">{T('New record')}</span>}
+            <article key={index} className={records[index]?.isNewBest ? 'is-new-record' : undefined}>
+              {records[index]?.isNewBest && <span className="new-record"><i aria-hidden="true">✦</i> {T('New record')}</span>}
               <h3>{T('Player')} {index + 1}</h3>
               <div className="result-headline">
                 <div className={`grade-stamp grade-${grade.toLowerCase()}`} aria-label={`${T('Grade')} ${grade}`}>{grade}</div>
@@ -362,7 +356,7 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
               </div>
               <div className="result-breakdown">
                 <h4>{T('Movement breakdown')}</h4>
-                <div className="result-stat"><span>{T('Average movement match')}</span><b>{resultAccuracy}%</b></div>
+                <div className="result-stat"><span>{T('Movement + timing accuracy')}</span><b>{resultAccuracy}%</b></div>
                 <div className="result-stat"><span>{T('max combo')}</span><b>{player.maxCombo}×</b></div>
                 <div className="result-hit result-hit-perfect"><span>{T('Perfect match')}</span><b>{player.perfect}</b></div>
                 <div className="result-hit result-hit-good"><span>{T('Good match')}</span><b>{player.good}</b></div>
@@ -381,14 +375,16 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
         <button className="btn" onClick={onChooseSong}>{T('Choose another song')}</button>
         <button className="btn result-home" onClick={onHome}>{T('Home')}</button>
       </div>
-      {photoStatus === 'saved' && <p className="result-photo-status" role="status">{L('Photo saved to Library → Photos', '照片已保存到舞蹈库 → 照片')}</p>}
+      {photoStatus === 'waiting' && <p className="result-photo-status">{T('Photo in a moment. Menu gestures resume after the photo — lower your hands first.')} <button className="btn" onClick={skipPhoto}>{T('Skip photo')}</button></p>}
+      {photoStatus === 'skipped' && <p className="result-photo-status" role="status">{T('Photo skipped. Lower your hands to use menu gestures.')}</p>}
+      {photoStatus === 'saved' && <p className="result-photo-status" role="status">{T('Photo saved to Photos')}</p>}
       {photoStatus === 'saving' && <p className="result-photo-status" role="status">{L('Saving your photo…', '正在保存照片…')}</p>}
       {(photoStatus === 'error' || photoStatus === 'cancelled') && <p className="result-photo-status" role="alert">{L(photoStatus === 'error' ? 'Photo could not be saved.' : 'Photo countdown stopped when this page was hidden.', photoStatus === 'error' ? '照片未能保存。' : '页面隐藏时，拍照倒计时已停止。')} <button className="btn" onClick={retryPhoto}>{L('Retry photo', '重试拍照')}</button></p>}
-      <div className="result-gesture-banner" role="note" aria-label={L('Gesture controls', '手势操作')}>
+      <div className={`result-gesture-banner${photoStatus === 'waiting' || photoStatus === 'saving' ? ' is-suspended' : ''}`} role="note" aria-label={L('Gesture controls', '手势操作')}>
         <p className="result-gesture-line result-gesture-replay">{L('Right hand up - Replay', '右手举起 - 重玩')}</p>
         <p className="result-gesture-line result-gesture-song">{L('Left hand up - Choose song', '左手举起 - 选择歌曲')}</p>
       </div>
-      {photoStatus === 'waiting' && stage.phase === 'posing' && createPortal(<div className="result-photo-prompt" role="status" aria-live="polite"><strong>{T(photoPrompt)}</strong><span>{stage.digit}</span></div>, document.body)}
+      {photoStatus === 'waiting' && stage.phase === 'posing' && createPortal(<div className="result-photo-prompt" role="status" aria-live="polite"><strong>{T(photoPrompt)}</strong><span>{stage.digit}</span><button className="btn" onClick={skipPhoto}>{T('Skip photo')}</button></div>, document.body)}
       {flash && createPortal(<div className="result-photo-flash" aria-hidden="true" />, document.body)}
     </section>
   )

@@ -30,17 +30,22 @@ import {
   type MenuGesture,
 } from '../pose/gestures'
 import {
-  advanceMotionRound,
+  judgeMotionTargets,
+  roundScoringComplete,
   isGameRunReady,
   newMotionRound,
   type CueFrame,
   type GamePhase,
+  SCORING_VERSION,
+  type ScoredHit,
   type HitGrade,
   type MotionRound,
   type PlayerRound,
 } from '../pose/gameplay'
-import { advanceScoringClock, buildMotionIntervals, evaluateMotionInterval, liveMotionFrame, motionLagLimit, referenceMotionFrames, type MotionFrame } from '../pose/motionScore'
-import { withinTrim, type SongEdit } from '../lib/songEdits'
+import { advanceScoringClock, liveMotionFrame, MOTION_SETTINGS, type MotionFrame, type MotionInterval } from '../pose/motionScore'
+import { buildArcadeChart } from '../pose/arcadeChart'
+import { HIT_BURST_DURATION_S } from '../pose/arcade'
+import type { SongEdit } from '../lib/songEdits'
 import type { Difficulty } from '../pose/hitTargets'
 import type { PoseTrack } from '../pose/track'
 
@@ -125,6 +130,7 @@ export interface SectionPractice {
 }
 
 interface Props {
+  motionChart?: { frames: MotionFrame[]; intervals: MotionInterval[] }
   songEdit?: SongEdit | null
   targetRef: React.MutableRefObject<TargetPose>
   playbackRef?: React.MutableRefObject<HTMLVideoElement | null>
@@ -146,7 +152,8 @@ interface Props {
   difficulty?: Difficulty
   onLobbyChange?: (ready: boolean, players: number) => void
   onGameScores?: (players: PlayerRound[]) => void
-  onHit?: (grade: HitGrade, time: number, referenceTime: number, keys: string[]) => void
+  onGameEnd?: (players: PlayerRound[]) => void
+  onHits?: (hits: ScoredHit[]) => void
   onScoreDebug?: (entries: ScoreDebug[]) => void
   onSoloPresence?: (present: boolean, nowMs: number) => void
   requireCalibration?: boolean
@@ -157,6 +164,7 @@ interface Props {
   onDiagnosticsClose?: () => void
   onCalibrationChange?: (state: CalibrationState | null) => void
   gestureContext?: GestureContext | null
+  gesturesSuspended?: boolean
   onGestureAction?: (gesture: MenuGesture) => void
   soundMuted?: boolean
   onRunningChange?: (running: boolean) => void
@@ -175,6 +183,7 @@ export default function WebcamPanel({
   targetRef,
   playbackRef,
   track,
+  motionChart: preparedMotionChart,
   songEdit,
   videoId,
   videoName,
@@ -190,7 +199,8 @@ export default function WebcamPanel({
   difficulty = 'normal',
   onLobbyChange,
   onGameScores,
-  onHit,
+  onGameEnd,
+  onHits,
   onScoreDebug,
   onSoloPresence,
   requireCalibration = false,
@@ -201,6 +211,7 @@ export default function WebcamPanel({
   onDiagnosticsClose,
   onCalibrationChange,
   gestureContext = null,
+  gesturesSuspended = false,
   onGestureAction,
   soundMuted = false,
   onRunningChange,
@@ -212,9 +223,9 @@ export default function WebcamPanel({
   const difficultyRef = useRef(difficulty)
   difficultyRef.current = difficulty
   const motionChart = useMemo(() => {
-    const frames = track ? referenceMotionFrames(track) : []
-    return { frames, intervals: withinTrim(buildMotionIntervals(frames, focus, trackHead), songEdit) }
-  }, [track, focus, trackHead, songEdit])
+    if (preparedMotionChart) return preparedMotionChart
+    return buildArcadeChart(track, difficulty, focus, trackHead, songEdit)
+  }, [preparedMotionChart, track, difficulty, focus, trackHead, songEdit])
   const songEditRef = useRef(songEdit)
   songEditRef.current = songEdit
   const motionChartRef = useRef(motionChart)
@@ -256,7 +267,6 @@ export default function WebcamPanel({
   // The lag estimate persists between frames so it can settle.
   const lagStatesRef = useRef<LagState[]>([{ lag: 0 }, { lag: 0 }])
   const autoMirroredRef = useRef([false, false])
-  const movementHistoryRef = useRef<{ t: number; value: CueFrame }[][]>([[], []])
   const motionHistoryRef = useRef<MotionFrame[][]>([[], []])
   const playbackEndedAtRef = useRef(0)
   const playerSmoothersRef = useRef([new LandmarkSmoother(), new LandmarkSmoother()])
@@ -270,6 +280,10 @@ export default function WebcamPanel({
   registrationPlayersRef.current = registrationPlayers
   const registeredPlayerCountRef = useRef(1)
   const roundsRef = useRef<MotionRound[]>([newMotionRound(), newMotionRound()])
+  const completedRunRef = useRef(0)
+  const finalFeedbackUntilRef = useRef(0)
+  const onGameEndRef = useRef(onGameEnd)
+  onGameEndRef.current = onGameEnd
   const gestureHoldRef = useRef<GestureHold>({ ...EMPTY_GESTURE_HOLD })
   const pauseHoldRef = useRef<ReturnType<typeof advancePauseHold>['hold']>(null)
   const gestureContextRef = useRef(gestureContext)
@@ -374,11 +388,13 @@ export default function WebcamPanel({
   }, [running, registrationScreen, resetPlayers])
 
   useEffect(() => {
-    if (!gestureHoldRef.current.latched) {
+    if (gesturesSuspended) {
+      gestureHoldRef.current = { ...EMPTY_GESTURE_HOLD, candidate: 'confirm', latched: true }
+    } else if (!gestureHoldRef.current.latched) {
       gestureHoldRef.current = { ...EMPTY_GESTURE_HOLD }
     }
     setGestureFeedback({ gesture: null, beeps: 0, latched: false })
-  }, [gestureContext])
+  }, [gestureContext, gesturesSuspended])
 
   useEffect(() => {
     if (gamePhase !== 'countdown') return
@@ -389,8 +405,8 @@ export default function WebcamPanel({
     const expected = motionChartRef.current.intervals.length
     roundsRef.current = [newMotionRound(expected), newMotionRound(expected)]
     playbackEndedAtRef.current = 0
+    finalFeedbackUntilRef.current = 0
     lagStatesRef.current = [{ lag: 0 }, { lag: 0 }]
-    movementHistoryRef.current = [[], []]
     motionHistoryRef.current = [[], []]
     onGameScores?.(roundsRef.current.slice(0, registeredPlayerCountRef.current))
   }, [gamePhase, gameRun, onGameScores])
@@ -399,12 +415,12 @@ export default function WebcamPanel({
     if (gamePhase === 'countdown') {
       finishRecording('restarted', roundsRef.current)
       beginRecording(videoName ?? 'Unknown song', {
-        scoringVersion: 2, scorer: 'motion-score-v2-2026-09-26', scoringSource, pointsSource,
+        scoringVersion: SCORING_VERSION, scorer: 'arcade-cue-score-v3-2026-10-03', scoringSource, pointsSource,
         songId: videoId, gameRun, difficulty, focus, trackHead, mirrorMode,
         players: registeredPlayerCountRef.current, songEdit,
         reference: motionChartRef.current, referenceTrack: track,
         camera: capture, userAgent: navigator.userAgent,
-        rules: { lag: { easy: 1.5, normal: 1.1, hard: 0.8 }, sigma: { easy: 35, normal: 27, hard: 20 }, gapGrace: 0.3, lagChange: 0.6, sampleCount: 5 },
+        rules: { timing: MOTION_SETTINGS, gapGrace: 0.3, lagChange: 0.6, sampleCount: 5 },
       })
     }
     captureScoring('phase', { phase: gamePhase, gameRun, songTime: playbackRefRef.current?.current?.currentTime, results: roundsRef.current })
@@ -512,7 +528,6 @@ export default function WebcamPanel({
     emaRef.current = null
     lagRef.current = null
     lagStatesRef.current = [{ lag: 0 }, { lag: 0 }]
-    movementHistoryRef.current = [[], []]
     playerSmoothersRef.current.forEach((smoother) => smoother.reset())
     playerWorldSmoothersRef.current.forEach((smoother) => smoother.reset())
     registrationStateRef.current = initialRegistration(performance.now())
@@ -788,36 +803,23 @@ export default function WebcamPanel({
         phase: gamePhase, gameRun, ready: isGameRunReady(target.gameRun, gameRun),
       })
 
-      if (gamePhase === 'playing' && isGameRunReady(target.gameRun, gameRun) && motionChartRef.current.intervals.length) {
-        const cameraTime = frameNow / 1000
+      if (gamePhase === 'playing' && isGameRunReady(target.gameRun, gameRun)) {
         for (let index = 0; index < registeredPlayerCount; index++) {
           const frame = playerFrames[index]
           if (!frame) continue
-          const history = movementHistoryRef.current[index]
-          history.push({ t: cameraTime, value: frame })
-          while (history.length > 1 && history[0].t < cameraTime - 2.2) history.shift()
           const motionHistory = motionHistoryRef.current[index]
           motionHistory.push(liveMotionFrame(playbackTime, frame.feature, frame.landmarks))
           while (motionHistory.length > 1 && motionHistory[0].t < playbackTime - 4) motionHistory.shift()
         }
         let changed = false
-        let hitGrade: HitGrade | null = null
-        let hitTime = 0
-        let hitReferenceTime = 0
-        let hitKeys: string[] = []
+        const hits: ScoredHit[] = []
         const scoreDebug: ScoreDebug[] = []
         for (let index = 0; index < registeredPlayerCount; index++) {
-          let before = roundsRef.current[index]
-          const { frames, intervals } = motionChartRef.current
-          while (before.nextTarget < intervals.length) {
-            const interval = intervals[before.nextTarget]
-            if (playbackTime < interval.end + motionLagLimit(difficultyRef.current) + 0.02) break
-            const reading = evaluateMotionInterval(
-              interval, frames, motionHistoryRef.current[index], difficultyRef.current, before.lag,
-              mirrorModeRef.current === 'auto' ? 'auto' : mirrorModeRef.current === 'mirror',
-              before.judged > 0,
-            )
-            const after = advanceMotionRound(before, reading, interval.kind)
+          const result = judgeMotionTargets(roundsRef.current[index], motionChartRef.current,
+            motionHistoryRef.current[index], difficultyRef.current, playbackTime,
+            mirrorModeRef.current === 'auto' ? 'auto' : mirrorModeRef.current === 'mirror', index + 1)
+          hits.push(...result.hits)
+          for (const { interval, before, after, evidence: reading } of result.judgments) {
             if (recorderSnapshot().active) captureScoring('judgment', {
               player: index, playbackTime, interval,
               input: { player: motionHistoryRef.current[index], difficulty: difficultyRef.current, previousLag: before.lag,
@@ -827,35 +829,26 @@ export default function WebcamPanel({
             scoreDebug.push({
               player: index + 1,
               cue: interval.kind,
-              movement: null,
+              movement: reading.movement === undefined ? null : Math.round(reading.movement * 100),
               match: reading.quality === null ? null : Math.round(reading.quality * 100),
               lag: reading.lag,
               grade: reading.quality === null ? 'unscored' : after.lastGrade ?? 'miss',
             })
-            if (after.perfect > before.perfect) {
-              hitGrade = 'perfect'
-              hitTime = playbackTime
-              hitReferenceTime = interval.kind === 'hold' ? interval.start : interval.end
-              hitKeys = interval.keys
-            } else if (after.good > before.good && hitGrade !== 'perfect') {
-              hitGrade = 'good'
-              hitTime = playbackTime
-              hitReferenceTime = interval.kind === 'hold' ? interval.start : interval.end
-              hitKeys = interval.keys
-            } else if (after.miss > before.miss && hitGrade === null) {
-              hitGrade = 'miss'
-              hitTime = playbackTime
-              hitReferenceTime = interval.kind === 'hold' ? interval.start : interval.end
-              hitKeys = interval.keys
-            }
-            before = after
             changed = true
           }
-          roundsRef.current[index] = before
+          roundsRef.current[index] = result.round
         }
-        if (hitGrade) onHit?.(hitGrade, hitTime, hitReferenceTime, hitKeys)
+        if (hits.length) onHits?.(hits)
         if (scoreDebug.length) onScoreDebug?.(scoreDebug)
         if (changed) onGameScores?.(roundsRef.current.slice(0, registeredPlayerCount))
+        const finalPlayers = roundsRef.current.slice(0, registeredPlayerCount)
+        if (completedRunRef.current !== gameRun && roundScoringComplete(scoringClock.endedAt > 0, finalPlayers)) {
+          if (!finalFeedbackUntilRef.current) finalFeedbackUntilRef.current = frameNow + HIT_BURST_DURATION_S * 1000
+          if (frameNow >= finalFeedbackUntilRef.current) {
+            completedRunRef.current = gameRun
+            onGameEndRef.current?.(finalPlayers)
+          }
+        }
       }
       if (!lobbyReadyRef.current) {
         for (const playerPose of poses) {
@@ -935,7 +928,7 @@ export default function WebcamPanel({
       if (v && 'cancelVideoFrameCallback' in v) v.cancelVideoFrameCallback(handle)
       else cancelAnimationFrame(handle)
     }
-  }, [running, targetRef, gamePhase, gameRun, onGameScores, onHit, onLobbyChange, onScoreDebug, onCalibrationChange, onRegistrationPlayersChange])
+  }, [running, targetRef, gamePhase, gameRun, onGameScores, onHits, onLobbyChange, onScoreDebug, onCalibrationChange, onRegistrationPlayersChange])
 
   const calibrationGuide = running && gamePhase === 'lobby' && lobbyReady && calibration && !checking && (
     <div className="calibration-card" role="status" aria-live="polite">
@@ -995,6 +988,7 @@ export default function WebcamPanel({
               const detected = playerSetup.detected[index] ?? false
               const progress = playerSetup.progress[index] ?? 0
               const confirmed = playerSetup.confirmed[index] ?? false
+              const holding = detected && playerSetup.inZone[index] && playerSetup.rightHandRaised[index] && !confirmed
               const instruction = !detected
                 ? T('Step into this area')
                 : !playerSetup.inZone[index]
@@ -1003,12 +997,18 @@ export default function WebcamPanel({
                     ? L('Confirmed', '已确认')
                   : !playerSetup.rightHandRaised[index]
                     ? registrationScreen ? L('RAISE YOUR RIGHT HAND', '举起右手') : T('Right hand up · left hand down')
-                    : `${Math.round(progress * 100)}%`
+                    : L('KEEP HOLDING', '继续保持')
               return (
-                <div key={index} className={`player-zone ${confirmed && playerSetup.inZone[index] ? 'ready' : ''}`}>
+                <div key={index} className={`player-zone${confirmed && playerSetup.inZone[index] ? ' ready' : ''}${holding ? ' holding' : ''}`}>
                   <strong>{playerSetup.count === 1 ? T('PLAYER') : `${T('PLAYER')} ${index + 1}`}</strong>
                   <span>{instruction}</span>
-                  <i style={{ transform: `scaleX(${progress})` }} />
+                  {holding && <div className="player-hold-status">
+                    <b>{L('Hold to confirm', '保持姿势以确认')}</b>
+                    <output>{Math.round(progress * 100)}%</output>
+                    <div className="player-hold-progress" role="progressbar" aria-label={L(`Player ${index + 1} confirmation`, `玩家 ${index + 1} 确认进度`)} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+                      <i style={{ transform: `scaleX(${progress})` }} />
+                    </div>
+                  </div>}
                 </div>
               )
             })}
@@ -1136,7 +1136,7 @@ export default function WebcamPanel({
         <div className="gesture-cue-steps" role="progressbar" aria-label={L('Gesture confirmation', '手势确认进度')} aria-valuemin={0} aria-valuemax={3} aria-valuenow={gestureFeedback.beeps}>{[1, 2, 3].map((step) => <i key={step} className={step <= gestureFeedback.beeps ? 'is-lit' : ''} />)}</div>
         <p>{gestureFeedback.latched
           ? activeGesture === 'previous' || activeGesture === 'next'
-            ? L('Keep holding to browse · lower to stop', '保持姿势继续浏览 · 放下即停止')
+            ? L('Keep holding to browse · raise right hand to select', '保持姿势继续浏览 · 举起右手选择')
             : L('Lower your hand to choose again', '放下手后可再次选择')
           : L('Hold steady for three beats', '保持姿势，等待三声提示')}</p>
       </div>, document.body,
