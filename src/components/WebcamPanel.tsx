@@ -163,6 +163,8 @@ interface Props {
   diagnosticRequested?: boolean
   onDiagnosticsClose?: () => void
   onCalibrationChange?: (state: CalibrationState | null) => void
+  selectedMenuLabel?: string
+  distanceControls?: boolean
   gestureContext?: GestureContext | null
   gesturesSuspended?: boolean
   onGestureAction?: (gesture: MenuGesture) => void
@@ -210,6 +212,8 @@ export default function WebcamPanel({
   diagnosticRequested = false,
   onDiagnosticsClose,
   onCalibrationChange,
+  selectedMenuLabel = '',
+  distanceControls = false,
   gestureContext = null,
   gesturesSuspended = false,
   onGestureAction,
@@ -329,6 +333,8 @@ export default function WebcamPanel({
   })
   const [lobbyReady, setLobbyReady] = useState(false)
   const checking = diagnosticRequested && registrationScreen && running && lobbyReady
+  const checkingRef = useRef(checking)
+  checkingRef.current = checking
   const [gestureFeedback, setGestureFeedback] = useState<{ gesture: MenuGesture | null; beeps: number; latched: boolean }>({
     gesture: null,
     beeps: 0,
@@ -734,6 +740,8 @@ export default function WebcamPanel({
       }
       if (lobbyReadyRef.current && gestureContextRef.current && calibrationRef.current?.phase !== 'framing' && calibrationRef.current?.phase !== 'movement') {
         gestureReading = advanceGestureFromPose(gestureHoldRef.current, pose ?? undefined, frameNow)
+        // Diagnostic movements must not trigger ordinary navigation feedback.
+        if (checkingRef.current && gestureReading.candidate !== 'back') gestureReading = { ...EMPTY_GESTURE_HOLD, progress: 0, beep: null, fired: null }
         gestureHoldRef.current = gestureReading
         if (gestureReading.beep) playSfx(
           gestureReading.beep === 1 ? 'gestureOne' : gestureReading.beep === 2 ? 'gestureTwo' : 'gestureThree',
@@ -956,7 +964,7 @@ export default function WebcamPanel({
 
   const activeGesture = gestureFeedback.gesture
   const showGestureCue = running && lobbyReady && gestureContext && activeGesture && gestureFeedback.beeps > 0 &&
-    !checking && calibration?.phase !== 'framing' && calibration?.phase !== 'movement'
+    (!checking || activeGesture === 'back') && calibration?.phase !== 'framing' && calibration?.phase !== 'movement'
   const gesturePose = activeGesture === 'confirm' ? L('RIGHT HAND UP', '举起右手')
     : activeGesture === 'back' ? L('BACK GESTURE', '返回手势')
       : activeGesture === 'previous' ? L('LEFT ARM OUT', '左臂平伸') : L('RIGHT ARM OUT', '右臂平伸')
@@ -1015,10 +1023,11 @@ export default function WebcamPanel({
           </div>
         )}
         {!running && (
-          <div className="stage-overlay">
-            <button className="btn primary" onClick={start} disabled={starting}>
+          <div className="stage-overlay" data-gesture-extra={distanceControls ? 'practice' : undefined}>
+            <button className="btn primary" autoFocus={registrationScreen} onClick={start} disabled={starting}>
               {T(starting ? 'Starting…' : 'Turn on camera')}
             </button>
+            {registrationScreen && <span className="camera-key-hint">Press Enter to start · Esc to go back</span>}
             {error && <p className="error">{error}</p>}
           </div>
         )}
@@ -1059,21 +1068,22 @@ export default function WebcamPanel({
 
       {requireCalibration && calibrationGuide}
 
-      <div className="controls">
+      <div className={`controls${distanceControls ? ' practice-camera-controls' : ''}`} data-gesture-extra={distanceControls ? 'practice' : undefined}>
         <div className="ctrl-group">
           {running && (
-            <button className="btn" onClick={stop}>
+            <button className="btn" data-gesture-skip onClick={stop}>
               {T('Stop camera')}
             </button>
           )}
           {running && gamePhase === 'lobby' && lobbyReady && (
-            <button className="btn" onClick={resetPlayers}>{T('Register players again')}</button>
+            <button className="btn" data-gesture-skip onClick={resetPlayers}>{T('Register players again')}</button>
           )}
           {running && gamePhase === 'lobby' && lobbyReady && !requireCalibration && (calibration?.phase !== 'framing' && calibration?.phase !== 'movement') && (
-            <button className="btn" onClick={beginCheck}>{T('Check tracking')}</button>
+            <button className="btn" data-gesture-skip onClick={beginCheck}>{T('Check tracking')}</button>
           )}
           {!requireCalibration && <span className="ctrl-label">{T('Practise')}</span>}
-          {!requireCalibration && (
+          {!requireCalibration && distanceControls && <button className="btn" onClick={() => onFocusChange(focus === 'full' ? 'upper' : focus === 'upper' ? 'lower' : 'full')}>{T('Body focus')}: {T(focus === 'full' ? 'Whole body' : focus === 'upper' ? 'Arms only' : 'Legs only')}</button>}
+          {!requireCalibration && !distanceControls && (
             [
               ['full', T('Whole body'), T('Score everything')],
               ['upper', T('Arms only'), T('Only arms and head are scored — your legs need not be in frame')],
@@ -1130,7 +1140,7 @@ export default function WebcamPanel({
       <div className={`gesture-cue gesture-cue-${activeGesture}`}>
         <div className="gesture-cue-heading">
           <span className="gesture-cue-symbol" aria-hidden="true">{activeGesture === 'previous' ? '←' : activeGesture === 'next' ? '→' : activeGesture === 'back' ? '×' : '↑'}</span>
-          <div><span className="gesture-cue-pose">{gesturePose}</span><strong aria-live="polite">{T(gestureLabel(activeGesture, gestureContext))}</strong></div>
+          <div><span className="gesture-cue-pose">{gesturePose}</span><strong aria-live="polite">{activeGesture === 'confirm' && selectedMenuLabel ? `${T('Select')}: ${selectedMenuLabel}` : T(gestureLabel(activeGesture, gestureContext))}</strong></div>
           <b className="gesture-cue-count" aria-hidden="true">{gestureFeedback.beeps}<small>/ 3</small></b>
         </div>
         <div className="gesture-cue-steps" role="progressbar" aria-label={L('Gesture confirmation', '手势确认进度')} aria-valuemin={0} aria-valuemax={3} aria-valuenow={gestureFeedback.beeps}>{[1, 2, 3].map((step) => <i key={step} className={step <= gestureFeedback.beeps ? 'is-lit' : ''} />)}</div>

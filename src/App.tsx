@@ -1,4 +1,5 @@
 import { RecordingBadge } from './components/ScoringRecorder'
+import { activeMenuSurface, menuItems, menuItemLabel, markMenuSelection, menuKeyAction } from './lib/menuNavigation'
 import { useMenuMotion } from './lib/useMenuMotion'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { TargetPose } from './components/VideoPanel'
@@ -12,7 +13,7 @@ import UpdateToast from './components/UpdateToast'
 import AttractKiosk from './components/AttractKiosk'
 import { createAnalysisQueue } from './lib/analysisQueue'
 import { loadSongEdit, isTrimmed, type SongEdit } from './lib/songEdits'
-import { Brand, HomeScreen, PauseOverlay, ResultsScreen, SettingsScreen, type ResultRecord } from './components/GameShell'
+import { Brand, HomeScreen, MenuGuide, PauseOverlay, ResultsScreen, SettingsScreen, type ResultRecord } from './components/GameShell'
 import { T, L, useLangTick, getLang, setLang } from './i18n'
 import { LEVEL_COLORS, SIDE_COLORS } from './pose/skeleton'
 import type { Focus } from './pose/angles'
@@ -87,7 +88,7 @@ function PickerGestureGuide() {
   const guides = [
     { pose: 'left' as const, arrow: '←', title: L('Left arm out:', '左臂平伸：'), action: L('previous song', '上一首') },
     { pose: 'right' as const, arrow: '→', title: L('Right arm out:', '右臂平伸：'), action: L('next song', '下一首') },
-    { pose: 'select' as const, arrow: '↑', title: L('Right hand up:', '举右手：'), action: L('play', '开始') },
+    { pose: 'select' as const, arrow: '↑', title: L('Right hand up:', '举右手：'), action: L('select highlighted card', '选择当前卡片') },
     { pose: 'back' as const, arrow: '↶', title: L('Left hand up:', '举左手：'), action: L('back', '返回') },
   ]
   return <div className="picker-gesture-guide" aria-label={L('Gesture controls', '手势操作')}>
@@ -109,6 +110,7 @@ export default function App() {
   const [resultRecords, setResultRecords] = useState<(ResultRecord | null)[]>([])
   const [recordSyncError, setRecordSyncError] = useState(false)
   const [recordSaveError, setRecordSaveError] = useState(false)
+  const [recordNoticeDismissed, setRecordNoticeDismissed] = useState(false)
   const [syncPending, setSyncPending] = useState(false)
   const [stats, setStats] = useState<Map<string, VideoStats>>(new Map())
   const [current, setCurrent] = useState<LibraryEntry | null>(null)
@@ -146,6 +148,9 @@ export default function App() {
   const [gamePlayers, setGamePlayers] = useState<PlayerRound[]>([])
   const [scoreDebug, setScoreDebug] = useState<ScoreDebug[]>([])
   const [hitFeedback, setHitFeedback] = useState<HitFeedback[]>([])
+  const [selectedMenuLabel, setSelectedMenuLabel] = useState('')
+  const [pickerOptionsSelected, setPickerOptionsSelected] = useState(false)
+  const [pickerOptionsOpen, setPickerOptionsOpen] = useState(false)
   const [gestureSelectedId, setGestureSelectedId] = useState<string | null>(null)
   const [carouselMotion, setCarouselMotion] = useState<{ direction: 'left' | 'right'; turn: number } | null>(null)
   const [homeSelected, setHomeSelected] = useState(0)
@@ -317,6 +322,7 @@ export default function App() {
   }, [refresh, syncFromAccount])
 
   useEffect(() => onSyncPending(setSyncPending), [])
+  useEffect(() => setRecordNoticeDismissed(false), [recordSaveError, recordSyncError, syncPending])
 
   const currentId = current?.id ?? null
   useEffect(() => {
@@ -892,11 +898,13 @@ export default function App() {
   const playNavigationCue = (direction: 'left' | 'right') =>
     playSfx(direction === 'left' ? 'navigateLeft' : 'navigateRight', settings.soundMuted)
   const moveSong = (direction: 'left' | 'right') => {
-    if (!previewEntry || library.length < 2) return
+    if (!previewEntry) return
     playNavigationCue(direction)
-    const index = library.findIndex((entry) => entry.id === previewEntry.id)
+    const index = pickerOptionsSelected ? library.length : library.findIndex((entry) => entry.id === previewEntry.id)
+    const next = (index + (direction === 'left' ? -1 : 1) + library.length + 1) % (library.length + 1)
+    setPickerOptionsSelected(next === library.length)
     setCarouselMotion((motion) => ({ direction, turn: (motion?.turn ?? 0) + 1 }))
-    setGestureSelectedId(library[(index + (direction === 'left' ? -1 : 1) + library.length) % library.length].id)
+    if (next < library.length) setGestureSelectedId(library[next].id)
   }
   const moveHome = (direction: 'left' | 'right') => {
     playNavigationCue(direction)
@@ -968,45 +976,55 @@ export default function App() {
     else if (selected === 4) go('openSettings')
     else dispatch({ type: 'openCameraSetup' })
   }
-  const gestureContext: GestureContext | null = !editingSong && !beatLabOpen && lobby.ready && navigation.screen !== 'tracking' &&
-    navigation.screen !== 'attract' && !(navigation.screen === 'arcade' && src && ((arcadePhase === 'results' && resultPhotoPending) || arcadePhase === 'playing' || arcadePhase === 'countdown' || (arcadePhase === 'setup' && !confirmingRound && !choosingDifficulty && !choosingScoreFocus))) ? pickingSong ? 'songPicker' : 'menu' : null
-  const hasTrack = !!track
-
-  const menuItems = () => {
-    const surfaces = document.querySelectorAll<HTMLElement>('[data-gesture-surface]')
-    const surface = surfaces[surfaces.length - 1]
-    return surface ? [...surface.querySelectorAll<HTMLElement>('button:not(:disabled), input[type="checkbox"], input[type="radio"], summary')]
-      .filter((item) => !item.closest('[data-gesture-skip]') && item.getClientRects().length > 0) : []
-  }
-
+  // Keyboard navigation works before camera registration; gestures use the same selected action.
+  const menuContext: GestureContext | null = editingSong || beatLabOpen || (diagnosticRequested && lobby.ready) ? 'menu' :
+    navigation.screen !== 'tracking' && navigation.screen !== 'attract' && !(navigation.screen === 'arcade' && src &&
+      ((arcadePhase === 'results' && resultPhotoPending) || arcadePhase === 'playing' || arcadePhase === 'countdown' ||
+      (arcadePhase === 'setup' && !confirmingRound && !choosingDifficulty && !choosingScoreFocus))) ? pickingSong ? 'songPicker' : 'menu' : null
+  const gestureContext = lobby.ready ? menuContext : null
+  const menuFocus = choosingScoreFocus ? focus : null
+  const menuDifficulty = choosingDifficulty ? difficulty : null
+  const menuSongReady = confirmingRound ? songReady : null
+  const menuPlayersReady = confirmingRound ? playersReady : null
   const selectMenuItem = (item: HTMLElement) => {
     setFilePickerNotice(false)
-    document.querySelectorAll('[data-gesture-selected]').forEach((old) => old.removeAttribute('data-gesture-selected'))
-    item.setAttribute('data-gesture-selected', 'true')
-    item.setAttribute('data-selection-label', L('SELECTED', '已选择'))
-    item.focus({ preventScroll: true })
-    if (!item.closest('.song-carousel')) item.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    item.setAttribute('data-selection-label', T('SELECTED'))
+    setSelectedMenuLabel(markMenuSelection(item))
   }
 
   useEffect(() => {
-    if (!gestureContext || navigation.screen === 'home') return
-    const frame = requestAnimationFrame(() => {
-      const items = menuItems()
-      const first = (pickingSong ? items.find((item) => item.getAttribute('data-track-id') === previewEntry?.id) : null) ??
-        items.find((item) => item.hasAttribute('data-gesture-default')) ??
-        (activeScreen === 'arcade' || activeScreen === 'practice' || activeScreen === 'editor' ? items.find((item) => item.hasAttribute('data-track-id')) : null) ?? items[0]
-      if (first) selectMenuItem(first)
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [navigation.screen, arcadePhase, currentId, library.length, hasTrack, songReady, playersReady, gestureContext, activeScreen, pickingSong, previewEntry?.id, confirmingRound, choosingScoreFocus, choosingDifficulty, focus, difficulty])
+    if (!menuContext) return
+    let frame = 0
+    const ensureSelection = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const items = menuItems()
+        const selected = items.find((item) => item.hasAttribute('data-gesture-selected'))
+        if (selected) { setSelectedMenuLabel(menuItemLabel(selected)); return }
+        const first = items.find((item) => item.hasAttribute('data-gesture-default')) ??
+          items.find((item) => item.getAttribute('aria-current') === 'true') ?? items[0]
+        if (first) selectMenuItem(first)
+      })
+    }
+    document.querySelectorAll('[data-gesture-selected]').forEach((item) => item.removeAttribute('data-gesture-selected'))
+    ensureSelection()
+    const observer = new MutationObserver(ensureSelection)
+    if (menuMotionRef.current) observer.observe(menuMotionRef.current, { subtree: true, childList: true, attributes: true, attributeFilter: ['disabled', 'open'] })
+    return () => { observer.disconnect(); cancelAnimationFrame(frame) }
+  }, [menuContext, navigation.screen, arcadePhase, editingSong, beatLabOpen, pickerOptionsOpen, pickerOptionsSelected, previewEntry?.id, choosingScoreFocus, choosingDifficulty, menuFocus, menuDifficulty, menuSongReady, menuPlayersReady, menuMotionRef])
 
-  const handleGestureAction = (gesture: MenuGesture) => {
-    if (activeScreen === 'arcade' && arcadePhase === 'playing' && gesture === 'back') {
+  const handleGestureAction = (gesture: MenuGesture, source: 'gesture' | 'keyboard' = 'gesture') => {
+    if (!editingSong && !beatLabOpen && activeScreen === 'arcade' && arcadePhase === 'playing' && gesture === 'back') {
       dispatch({ type: 'pause' })
       return
     }
-    if (!gestureContext) return
+    if (!(source === 'keyboard' ? menuContext : gestureContext)) return
+    const surface = activeMenuSurface()
+    const overlay = Number(surface?.dataset.menuPriority ?? 0) > 0
+    if (source === 'gesture' && diagnosticRequested && navigation.screen === 'tracking' && gesture !== 'back') return
     if (gesture === 'back') {
+      const back = surface?.querySelector<HTMLElement>('[data-menu-back]')
+      if (back) { if (!back.hasAttribute('disabled')) back.click(); return }
       if (navigation.screen === 'settings') dispatch({ type: 'closeSettings' })
       else if (activeScreen === 'arcade' && arcadePhase === 'paused') dispatch({ type: 'resume' })
       else if (activeScreen === 'arcade' && arcadePhase === 'results') chooseSong()
@@ -1017,65 +1035,83 @@ export default function App() {
       else dispatch({ type: 'openHome' })
       return
     }
-    if (navigation.screen === 'home') {
+    if (!overlay && navigation.screen === 'home') {
       if (gesture === 'confirm') selectHome()
       else moveHome(gesture === 'previous' ? 'left' : 'right')
       return
     }
-    if (navigation.screen === 'arcade' && choosingDifficulty) {
+    if (!overlay && navigation.screen === 'arcade' && choosingDifficulty) {
       if (gesture === 'confirm') startSelectedDifficulty()
       else moveDifficulty(gesture === 'previous' ? 'left' : 'right')
       return
     }
-    if (navigation.screen === 'arcade' && choosingScoreFocus) {
+    if (!overlay && navigation.screen === 'arcade' && choosingScoreFocus) {
       if (gesture === 'confirm') confirmScoreFocus()
       else moveScoreFocus(gesture === 'previous' ? 'left' : 'right')
       return
     }
-    if (navigation.screen !== 'settings' && pickingSong && previewEntry) {
-      if (gesture === 'confirm') void openEntry(previewEntry, navigation.screen === 'practice' ? 'practice' : 'arcade')
-      else moveSong(gesture === 'previous' ? 'left' : 'right')
+    if (!overlay && navigation.screen !== 'settings' && pickingSong && previewEntry) {
+      if (gesture === 'confirm') {
+        if (pickerOptionsSelected) setPickerOptionsOpen(true)
+        else if (source === 'gesture' && !previewEntry.hasVideo) setFilePickerNotice(true)
+        else void openEntry(previewEntry, navigation.screen === 'practice' ? 'practice' : 'arcade')
+      } else moveSong(gesture === 'previous' ? 'left' : 'right')
       return
     }
-    const items = menuItems()
+    const items = menuItems(surface)
     if (!items.length) return
-    const index = Math.max(0, items.findIndex((item) => item.hasAttribute('data-gesture-selected')))
+    const focused = items.indexOf(document.activeElement as HTMLElement)
+    const index = focused >= 0 ? focused : Math.max(0, items.findIndex((item) => item.hasAttribute('data-gesture-selected')))
     if (gesture === 'confirm') {
-      if (items[index].hasAttribute('data-needs-file')) setFilePickerNotice(true)
+      if (source === 'gesture' && items[index].hasAttribute('data-needs-file')) setFilePickerNotice(true)
       else items[index].click()
       return
     }
-    if (items.length < 2) return
     const direction = gesture === 'previous' ? 'left' : 'right'
     playNavigationCue(direction)
     selectMenuItem(items[(index + (direction === 'left' ? -1 : 1) + items.length) % items.length])
   }
 
   const renderHeader = (title?: string) => (
-    <header className="app-header">
-      <button className="brand-button" onClick={() => go('openHome')} aria-label={T('Home')}><Brand compact /></button>
+    <header className="app-header" data-gesture-skip>
+      <button className="brand-button" data-menu-back onClick={() => go('openHome')} aria-label={T('Home')}><Brand compact /></button>
       {title && <span className="screen-label">{T(title)}</span>}
       <nav>{activeScreen === 'practice' && !cameraRunning && <button className="btn primary practice-camera-action" onClick={() => dispatch({ type: 'openCameraSetup' })}>{T('Camera setup')}</button>}<button className="btn subtle" onClick={() => go('openEditor')}><i aria-hidden="true">▥</i>{L('Beatmap Editor', '谱面编辑器')}</button><button className="btn subtle" onClick={() => go('openPhotos')}><i aria-hidden="true">▣</i>{L('Photos', '照片')}</button><button className="btn subtle" onClick={() => go('openSettings')}><i aria-hidden="true">⚙</i>{T('Settings')}</button><AccountBar /></nav>
     </header>
   )
 
-  const renderTrackPicker = (destination: 'arcade' | 'practice') => (
+  const renderTrackPicker = (destination: 'arcade' | 'practice') => {
+    const choices = [...library, null]
+    const selectedIndex = pickerOptionsSelected ? library.length : Math.max(0, library.findIndex((entry) => entry.id === previewEntry?.id))
+    return (
     <section className={`track-picker ${dragOver ? 'over' : ''}`} data-gesture-surface
       onDragOver={(event) => { event.preventDefault(); setDragOver(true) }}
       onDragLeave={() => setDragOver(false)}
       onDrop={(event) => { event.preventDefault(); setDragOver(false); void loadFiles(Array.from(event.dataTransfer.files), destination) }}>
       <div className="picker-heading"><h1>{L(destination === 'arcade' ? 'Select your track' : 'Select a routine', destination === 'arcade' ? '选择歌曲' : '选择练习')}</h1><PickerGestureGuide /></div>
       <div className="picker-stage">
-        {library.length > 1 && <button className="carousel-paddle carousel-paddle-left" onClick={() => moveSong('left')} aria-label={L('Previous song', '上一首')}>‹</button>}
-        {library.length ? <div key={carouselMotion?.turn ?? 0} className={`song-carousel${carouselMotion ? ` is-moving-${carouselMotion.direction}` : ''}`} data-count={library.length} role="group" aria-label={L('Song picker', '歌曲选择')}>
-          {([library.length > 1 ? library[(library.findIndex((entry) => entry.id === previewEntry.id) - 1 + library.length) % library.length] : null, previewEntry, library.length > 2 ? library[(library.findIndex((entry) => entry.id === previewEntry.id) + 1) % library.length] : null] as const).map((entry, slot) => entry ? <button
-            key={entry.id}
-            className={`song-card song-card-${slot === 0 ? 'left' : slot === 1 ? 'center' : 'right'}`}
-            data-track-id={entry.id}
-            data-gesture-label={entry.name.replace(/\.[^.]+$/, '')}
-            aria-current={slot === 1 ? 'true' : undefined}
-            onClick={() => { if (slot === 1) void openEntry(entry, destination); else moveSong(slot === 0 ? 'left' : 'right') }}
-          >
+        {library.length > 0 && <button className="carousel-paddle carousel-paddle-left" onClick={() => moveSong('left')} aria-label={L('Previous song', '上一首')}>‹</button>}
+        {library.length ? <div key={carouselMotion?.turn ?? 0} className={`song-carousel${carouselMotion ? ` is-moving-${carouselMotion.direction}` : ''}`} data-count={choices.length} role="group" aria-label={L('Song picker', '歌曲选择')}>
+          {([-1, 0, 1] as const).map((offset, slot) => {
+            if (offset === 1 && choices.length === 2) return null
+            const index = (selectedIndex + offset + choices.length) % choices.length
+            const entry = choices[index]
+            const select = () => {
+              if (slot !== 1) moveSong(slot === 0 ? 'left' : 'right')
+              else if (entry) void openEntry(entry, destination)
+              else setPickerOptionsOpen(true)
+            }
+            if (!entry) return <button key="options" className={`song-card picker-options-card song-card-${slot === 0 ? 'left' : slot === 1 ? 'center' : 'right'}`} aria-current={slot === 1 ? 'true' : undefined} data-gesture-label="Options" onClick={select}>
+              <span className="song-card-media"><img src={`${import.meta.env.BASE_URL}menu/settings.webp`} alt="" /></span><strong>Options</strong><span className="song-card-action">Settings · Photos · Track tools</span><span className="song-card-state">Select to open</span>
+            </button>
+            return <button
+              key={entry.id}
+              className={`song-card song-card-${slot === 0 ? 'left' : slot === 1 ? 'center' : 'right'}`}
+              data-track-id={entry.id}
+              data-gesture-label={entry.name.replace(/\.[^.]+$/, '')}
+              aria-current={slot === 1 ? 'true' : undefined}
+              onClick={select}
+            >
             <span className="song-card-media">
               {slot === 1 && previewSrc?.id === entry.id ? <video ref={previewRef} src={previewSrc.url} poster={entry.thumb} playsInline preload="auto" onLoadedMetadata={(event) => {
               const video = event.currentTarget
@@ -1088,7 +1124,8 @@ export default function App() {
             <strong title={entry.name}>{entry.name.replace(/\.[^.]+$/, '')}</strong>
             {slot === 1 && entry.hasVideo && <span className="song-card-action"><i aria-hidden="true">▶</i><b>{L('PLAY THIS TRACK', '播放这首歌曲')}</b></span>}
             <span className="song-card-state">{slot === 1 ? entry.hasVideo ? L('Select to dance', '选择后开始跳舞') : L('Add video again to play', '重新添加视频以开始游戏') : L('Browse to this song', '浏览这首歌曲')}</span>
-          </button> : null)}
+          </button>
+          })}
         </div> : <div className="picker-empty">
           <span className="picker-empty-icon" aria-hidden="true">♪</span>
           <h2>{T('Add your first dance')}</h2>
@@ -1096,13 +1133,24 @@ export default function App() {
           <button className="btn primary" data-needs-file data-gesture-default onClick={() => openFilePicker(destination)}>{T('Add a dance video')}</button>
           <small>{T('Your videos and camera stay on this device.')}</small>
         </div>}
-        {library.length > 1 && <button className="carousel-paddle carousel-paddle-right" onClick={() => moveSong('right')} aria-label={L('Next song', '下一首')}>›</button>}
-        {previewPaused && previewSrc?.id === previewEntry?.id && <button className="btn primary preview-play" onClick={() => { void previewRef.current?.play() }}>{L('Play preview', '播放预览')}</button>}
+        {library.length > 0 && <button className="carousel-paddle carousel-paddle-right" onClick={() => moveSong('right')} aria-label={L('Next song', '下一首')}>›</button>}
+        {!pickerOptionsSelected && previewPaused && previewSrc?.id === previewEntry?.id && <button className="btn primary preview-play" onClick={() => { void previewRef.current?.play() }}>{L('Play preview', '播放预览')}</button>}
       </div>
-      {library.length > 1 && <nav className="carousel-controls" aria-label="Song navigation"><button className="btn" onClick={() => moveSong('left')}>{L('Previous song', '上一首')}</button><button className="btn" onClick={() => moveSong('right')}>{L('Next song', '下一首')}</button></nav>}
-      <div className="picker-import">{library.length > 0 && <button className="btn primary" data-needs-file onClick={() => openFilePicker(destination)}>{L('+ Add a video', '+ 添加视频')}</button>}<span className={filePickerNotice ? 'is-notice' : undefined} role={filePickerNotice ? 'status' : undefined}>{filePickerNotice ? L('Use the device to choose a video file.', '请用设备选择视频文件。') : L('Drop a dance video here, or choose one to play.', '将舞蹈视频拖到这里，或选择一个开始游戏。')}</span></div>
+      {library.length > 0 && <nav className="carousel-controls" aria-label="Song navigation"><button className="btn" onClick={() => moveSong('left')}>{L('Previous song', '上一首')}</button><button className="btn" onClick={() => moveSong('right')}>{L('Next song', '下一首')}</button></nav>}
+      <div className="picker-import"><button className="btn" onClick={() => setPickerOptionsOpen(true)}>Options</button>{library.length > 0 && <button className="btn primary" data-needs-file onClick={() => openFilePicker(destination)}>{L('+ Add a video', '+ 添加视频')}</button>}<span className={filePickerNotice ? 'is-notice' : undefined} role={filePickerNotice ? 'status' : undefined}>{filePickerNotice ? L('Use the device to choose a video file.', '请用设备选择视频文件。') : L('Drop a dance video here, or choose one to play.', '将舞蹈视频拖到这里，或选择一个开始游戏。')}</span></div>
+      {pickerOptionsOpen && <div className="picker-options-overlay distance-menu" role="dialog" aria-modal="true" aria-label="Song picker options" data-gesture-surface data-menu-priority="1">
+        <div className="picker-options-panel"><h2>Options</h2><div className="picker-options-actions">
+          <button className="btn primary" data-gesture-default onClick={() => { setPickerOptionsOpen(false); go('openSettings') }}>Settings</button>
+          <button className="btn" onClick={() => { setPickerOptionsOpen(false); go('openPhotos') }}>Photos</button>
+          {previewEntry && <button className="btn" onClick={() => { setPickerOptionsOpen(false); setEditingSong(previewEntry) }}>Edit selected track</button>}
+          {previewPaused && previewSrc && <button className="btn" onClick={() => { setPickerOptionsSelected(false); setPickerOptionsOpen(false); void previewRef.current?.play() }}>Play preview</button>}
+          <button className="btn" data-needs-file onClick={() => openFilePicker(destination)}>Add a video</button>
+          <button className="btn" data-menu-back onClick={() => setPickerOptionsOpen(false)}>Back to songs</button>
+        </div>{filePickerNotice && <p className="file-picker-help" role="status">Use the device to choose a video file.</p>}<MenuGuide back="Back to songs" /></div>
+      </div>}
     </section>
-  )
+    )
+  }
 
   const renderPanels = (mode: 'arcade' | 'practice') => {
     if (!src) return renderTrackPicker(mode)
@@ -1110,7 +1158,7 @@ export default function App() {
     return (
       <Suspense fallback={<LoadingStage />}>
         <main className={`panels ${mode === 'arcade' && ['countdown', 'playing', 'paused'].includes(gamePhase) ? 'game-active' : mode === 'arcade' && gamePhase === 'results' ? 'game-results-stage' : ''}`}>
-          <VideoPanel src={src} playbackRef={gameVideoRef} targetRef={targetRef} sections={current?.sections ?? []} sectionStats={current?.sectionStats} onSectionsChange={(sections) => void updateSections(sections)} focus={scoringFocus} track={track} songEdit={activeScreen === 'arcade' ? songEdit : null} onAnalyse={() => void analyse()} analysing={analysing} analysisMessage={analysisMessage} showSkeletons={settings.showSkeletons} trackHead={scoringHead} difficulty={difficulty} gamePhase={panelPhase} countdown={countdown} gameRun={gameRun} hitFeedback={hitFeedback} cues={activeScreen === 'arcade' ? motionChart.cues : undefined} reducedEffects={settings.reducedEffects} />
+          <VideoPanel distanceControls={mode === 'practice'} src={src} playbackRef={gameVideoRef} targetRef={targetRef} sections={current?.sections ?? []} sectionStats={current?.sectionStats} onSectionsChange={(sections) => void updateSections(sections)} focus={scoringFocus} track={track} songEdit={activeScreen === 'arcade' ? songEdit : null} onAnalyse={() => void analyse()} analysing={analysing} analysisMessage={analysisMessage} showSkeletons={settings.showSkeletons} trackHead={scoringHead} difficulty={difficulty} gamePhase={panelPhase} countdown={countdown} gameRun={gameRun} hitFeedback={hitFeedback} cues={activeScreen === 'arcade' ? motionChart.cues : undefined} reducedEffects={settings.reducedEffects} />
         </main>
       </Suspense>
     )
@@ -1119,7 +1167,7 @@ export default function App() {
   const renderSelectedSongBar = () => <div className="difficulty-song-bar">
     <span className="difficulty-song-art">{current?.thumb ? <img src={current.thumb} alt="" /> : '♪'}</span>
     <span><small>{L('Selected song', '已选歌曲')}</small><strong>{current?.name.replace(/\.[^.]+$/, '') ?? T('Your dance')}</strong></span>
-    <button className="btn subtle" onClick={chooseSong}>{T('Change song')}</button>
+    <button className="btn subtle" data-menu-back onClick={chooseSong}>{T('Change song')}</button>
   </div>
 
   const renderScoreFocusPicker = () => {
@@ -1190,33 +1238,34 @@ export default function App() {
   const renderArcade = () => {
     if (arcadePhase === 'setup') {
       return <div className="destination-wrap">{renderHeader()}{!src ? renderTrackPicker('arcade') : choosingScoreFocus ? renderScoreFocusPicker() : choosingDifficulty ? renderDifficultyPicker() : (
-        <main className="song-loading-screen" data-gesture-surface><div className="song-loading-card">
+        <main className="song-loading-screen distance-menu" data-gesture-surface><div className="song-loading-card">
           <div className="song-loading-art">{current?.thumb ? <img src={current.thumb} alt="" /> : <span>♪</span>}</div>
           <div className="song-loading-copy"><span className="kicker">{L('Up next', '即将开始')}</span><h1>{current?.name.replace(/\.[^.]+$/, '') ?? T('Your dance')}</h1>
             <div className="round-options"><span>{T(focus === 'full' ? 'Whole body' : focus === 'upper' ? 'Arms only' : 'Legs only')}</span><span>{T(difficulty)}</span><span>{T(settings.trackHead ? 'Head scoring on' : 'Head scoring off')}</span></div>
             <div className="round-readiness" role="status" aria-live="polite">
-              <p><b>{T('Song')}:</b> {analysisMessage ?? (analysing != null ? `Preparing · ${Math.round(analysing * 100)}%` : !track || !songEditReady ? T('Preparing…') : !songReady ? T('No playable targets for these options. Change the body focus, check the trim and markers in Beatmap Editor, or try another dance video.') : T('Ready'))}</p>
+              <p><b>{T('Song')}:</b> {(analysisMessage ? T('Preparation failed — retry analysis.') : null) ?? (analysing != null ? `Preparing · ${Math.round(analysing * 100)}%` : !track || !songEditReady ? T('Preparing…') : !songReady ? T('No playable moves — change options or song.') : T('Ready'))}</p>
               <p><b>{T('Camera')}:</b> {T(!cameraRunning ? 'Off — open Camera setup to play.' : !playersReady ? 'Register your players in Camera setup.' : `${lobby.players} player${lobby.players === 1 ? '' : 's'} ready`)}</p>
             </div>
+            {analysisMessage && <details className="round-error-detail" data-gesture-skip><summary>Technical details</summary><p>{analysisMessage}</p></details>}
             {analysing != null && <div className="song-loading-progress" role="progressbar" aria-label="Song preparation" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(analysing * 100)}><i style={{ width: `${Math.round(analysing * 100)}%` }} /></div>}
             <div className="round-setup-actions">
               {confirmingRound && <button className="btn primary" data-gesture-default disabled={!songReady || !playersReady} onClick={() => { playSfx('confirm', settings.soundMuted); setConfirmingRound(false) }}>{T('Start dancing')}</button>}
-              {!playersReady && <button className={`btn${songReady ? ' primary' : ''}`} onClick={() => dispatch({ type: 'openCameraSetup' })}>{T('Camera setup')}</button>}
+              {!playersReady && <button className={`btn${songReady ? ' primary' : ''}`} data-gesture-default onClick={() => dispatch({ type: 'openCameraSetup' })}>{T('Camera setup')}</button>}
               {(analysisMessage || (track && analysing == null && !songReady)) && <button className="btn" onClick={() => void analyse()}>{T('Retry analysis')}</button>}
               {current && !songReady && songEdit?.charts[difficulty] !== undefined && <button className="btn" onClick={() => setEditingSong(current)}>{T('Edit markers')}</button>}
               <button className="btn" onClick={() => { setConfirmingRound(false); setChoosingScoreFocus(true) }}>{T('Change options')}</button>
-              <button className="btn subtle" onClick={chooseSong}>{T('Change song')}</button>
+              <button className="btn subtle" data-menu-back onClick={chooseSong}>{T('Change song')}</button>
             </div>
             {!confirmingRound && songReady && playersReady && <p className="round-start-notice" role="status">{T('Get ready — the countdown is starting.')}</p>}
           </div>
-        </div></main>
+        </div><MenuGuide back="Change song" /></main>
       )}</div>
     }
     return (
       <div className={`destination-wrap ${['countdown', 'playing', 'paused'].includes(arcadePhase) ? 'game-screen-active' : ''}`}>
         {renderHeader()}
         {['countdown', 'playing', 'paused'].includes(arcadePhase) && <ArcadeHud key={gameRun} players={gamePlayers} playerCount={registrationPlayers} phase={baseGamePhase} soundMuted={settings.soundMuted} scoreDebug={scoreDebug} onPause={() => dispatch({ type: 'pause' })} />}
-        {arcadePhase === 'results' && <section className="game-flow game-results" aria-live="polite" data-gesture-surface><ResultsScreen players={gamePlayers} difficulty={difficulty} records={resultRecords} reducedEffects={settings.reducedEffects} photoRound={resultPhotoRound} photoPrompt={photoPrompt(resultPhotoRound - 1)} onCapture={captureResultPhoto} onPhotoPendingChange={setResultPhotoPending} onReplay={startRound} onChooseSong={chooseSong} onHome={() => go('openHome')} /></section>}
+        {arcadePhase === 'results' && <section className="game-flow game-results" aria-live="polite" data-gesture-surface><ResultsScreen players={gamePlayers} difficulty={difficulty} records={resultRecords} reducedEffects={settings.reducedEffects} photoRound={resultPhotoRound} photoPrompt={photoPrompt(resultPhotoRound - 1)} takePhoto={settings.resultPhotos} onCapture={captureResultPhoto} onPhotoPendingChange={setResultPhotoPending} onReplay={startRound} onChooseSong={chooseSong} onHome={() => go('openHome')} /></section>}
         {renderPanels('arcade')}
         {arcadePhase === 'playing' && trackingRecovery.mode !== 'playing' && <div className="tracking-recovery" data-recovery-mode={trackingRecovery.mode} role="status" aria-live="polite">
           <span className="kicker">{L('Tracking paused', '追踪已暂停')}</span>
@@ -1229,15 +1278,41 @@ export default function App() {
     )
   }
 
-  const renderPractice = () => <div className="destination-wrap" data-gesture-surface>{renderHeader('Practice Studio')}{renderPanels('practice')}{src && <footer className="practice-legend"><span className="legend-group"><span className="legend-title">{T('Reference')}</span><span className="legend-item"><i style={{ background: SIDE_COLORS.left }} /> {T("dancer's left")}</span><span className="legend-item"><i style={{ background: SIDE_COLORS.right }} /> {T("dancer's right")}</span></span><span className="legend-group"><span className="legend-title">{T('You')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.ok }} /> {T('matching')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.warn }} /> {T('a bit off')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.bad }} /> {T('way off')}</span></span></footer>}</div>
+  const renderPractice = () => <div className="destination-wrap practice-distance" data-gesture-surface data-menu-scope="practice">{renderHeader('Practice Studio')}{renderPanels('practice')}{src && <footer className="practice-legend"><span className="legend-group"><span className="legend-title">{T('Reference')}</span><span className="legend-item"><i style={{ background: SIDE_COLORS.left }} /> {T("dancer's left")}</span><span className="legend-item"><i style={{ background: SIDE_COLORS.right }} /> {T("dancer's right")}</span></span><span className="legend-group"><span className="legend-title">{T('You')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.ok }} /> {T('matching')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.warn }} /> {T('a bit off')}</span><span className="legend-item"><i style={{ background: LEVEL_COLORS.bad }} /> {T('way off')}</span></span></footer>}{src && <MenuGuide back="Home" />}</div>
 
   const renderEditor = () => <div className="destination-wrap">{renderHeader(L('Beatmap Editor', '谱面编辑器'))}<main className="destination-screen library-screen editor-screen" data-gesture-surface><div className="screen-title-row"><h1>{L('Beatmap Editor', '谱面编辑器')}</h1><button className="btn primary" data-needs-file onClick={() => openFilePicker('arcade')}>{T('Add a dance')}</button></div><p className="editor-screen-description">{L('Choose a song to trim its video, adjust visual markers, and edit lighting.', '选择歌曲，裁剪视频、调整视觉标记并编辑灯光。')}</p><Library intent="edit" entries={library} stats={stats} records={records} currentId={currentId} selectedId={gestureSelectedId} onPreview={(entry) => setGestureSelectedId(entry.id)} onOpen={setEditingSong} onForget={forgetEntry} emptyHint={L('Add a dance video to start editing.', '添加舞蹈视频以开始编辑。')} /></main></div>
-  const renderPhotos = () => <div className="destination-wrap">{renderHeader(L('Photos', '照片'))}<main className="destination-screen library-screen photos-screen" data-gesture-surface><div className="screen-title-row"><h1>{L('Your photos', '你的照片')}</h1><button className="btn primary" onClick={() => go('openArcade')}>{T('Play a song')}</button></div><ResultPhotoGallery /></main></div>
+  const renderPhotos = () => <div className="destination-wrap">{renderHeader(T('Photos'))}<main className="destination-screen library-screen photos-screen"><ResultPhotoGallery onBack={() => go('openHome')} onPlay={() => go('openArcade')} /></main></div>
+
+  useEffect(() => { setPickerOptionsOpen(false); setPickerOptionsSelected(false) }, [activeScreen, src])
 
   useLangTick()
   return (
-    <div ref={menuMotionRef} className={`app-shell${navigation.screen === 'tracking' && navigation.returnScreen ? ' camera-setup-open' : ''}`}>
-      <UpdateToast />
+    <div ref={menuMotionRef} className={`app-shell${activeScreen === 'arcade' && arcadePhase === 'results' && resultPhotoPending ? ' results-photo-active' : ''}${navigation.screen === 'tracking' && navigation.returnScreen ? ' camera-setup-open' : ''}`} onFocusCapture={(event) => {
+      const item = event.target as HTMLElement
+      if (menuItems().includes(item)) setSelectedMenuLabel(markMenuSelection(item, false))
+    }} onKeyDownCapture={(event) => {
+      if (event.key === 'Escape' && navigation.screen === 'tracking' && !lobby.ready) {
+        event.preventDefault(); setDiagnosticRequested(false); dispatch({ type: 'closeCameraSetup' }); return
+      }
+      if (!menuContext || event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented) return
+      const target = event.target as HTMLElement
+      const surface = activeMenuSurface()
+      if (event.key === 'Tab' && [1, 3].includes(Number(surface?.dataset.menuPriority))) {
+        const items = menuItems(surface)
+        const first = items[0], last = items.at(-1)
+        if (first && ((!event.shiftKey && document.activeElement === last) || (event.shiftKey && document.activeElement === first) || !items.includes(document.activeElement as HTMLElement))) {
+          event.preventDefault(); (event.shiftKey ? last : first)?.focus(); return
+        }
+      }
+      const editable = !!target.closest('textarea, select, [contenteditable="true"], input:not([type="checkbox"]):not([type="radio"])')
+      if (target.closest('[data-gesture-skip]') || (Number(surface?.dataset.menuPriority ?? 0) >= 2 && !surface?.contains(target))) return
+      const action = menuKeyAction(event.key, editable, event.repeat)
+      if (!action) return
+      event.preventDefault()
+      event.stopPropagation()
+      handleGestureAction(action, 'keyboard')
+    }}>
+      <UpdateToast deferred={navigation.screen !== 'home' && !(pickingSong && !pickerOptionsOpen)} />
       <div ref={edgeRef} className="edge-light" aria-hidden="true" />
       <div ref={edgeStarsRef} className="edge-stars" aria-hidden="true" />
       <audio ref={menuMusicRef} src={menuTheme ? `${import.meta.env.BASE_URL}audio/${menuTheme.file}` : undefined} loop preload="none" />
@@ -1299,10 +1374,10 @@ export default function App() {
       {activeScreen === 'practice' && renderPractice()}
       {activeScreen === 'editor' && renderEditor()}
       {activeScreen === 'photos' && renderPhotos()}
-      {recordSaveError && <div className="record-sync-warning" role="alert">The round finished, but its personal best could not be saved on this device. <button onClick={() => setRecordSaveError(false)}>Dismiss</button></div>}
-      {!recordSaveError && (recordSyncError || syncPending) && <div className="record-sync-warning" role="alert">{syncPending ? 'Some account updates could not sync. Retry before closing the app.' : L('Personal bests are saved here, but account sync failed.', '个人最佳成绩已保存在本机，但账号同步失败。')} <button onClick={() => void syncFromAccount()}>{L('Retry', '重试')}</button></div>}
+      {(navigation.screen === 'home' || (activeScreen === 'arcade' && arcadePhase === 'results' && !resultPhotoPending)) && !recordNoticeDismissed && recordSaveError && <div className="record-sync-warning distance-menu" role="alert" data-gesture-surface data-menu-priority="3">The round finished, but its personal best could not be saved on this device. <button className="btn" data-menu-back data-gesture-default onClick={() => setRecordNoticeDismissed(true)}>Dismiss</button></div>}
+      {(navigation.screen === 'home' || (activeScreen === 'arcade' && arcadePhase === 'results' && !resultPhotoPending)) && !recordNoticeDismissed && !recordSaveError && (recordSyncError || syncPending) && <div className="record-sync-warning distance-menu" role="alert" data-gesture-surface data-menu-priority="3">{syncPending ? 'Some account updates could not sync. Retry before closing the app.' : L('Personal bests are saved here, but account sync failed.', '个人最佳成绩已保存在本机，但账号同步失败。')} <button className="btn" data-gesture-default onClick={() => void syncFromAccount()}>{L('Retry', '重试')}</button><button className="btn" data-menu-back onClick={() => setRecordNoticeDismissed(true)}>Dismiss</button></div>}
       {navigation.screen !== 'attract' && <Suspense fallback={null}><div className={`camera-dock camera-${navigation.screen === 'tracking' ? 'tracking' : activeScreen === 'arcade' ? arcadePhase : activeScreen === 'practice' && !src ? 'setup' : activeScreen}${cameraRunning ? '' : ' camera-off'}`}>
-        <WebcamPanel motionChart={motionChart} gesturesSuspended={navigation.screen === 'arcade' && arcadePhase === 'results' && resultPhotoPending} targetRef={targetRef} playbackRef={gameVideoRef} track={track} songEdit={activeScreen === 'arcade' ? songEdit : null} videoId={current?.id} videoName={current?.name} onSectionPractice={(deltas) => void recordSectionPractice(deltas)} focus={scoringFocus} onFocusChange={setFocus} showSkeletons={settings.showCameraSkeletons} trackHead={scoringHead} showPoseDebug={settings.showPoseDebug} onPhotoFrameReady={onPhotoFrameReady} gamePhase={activeScreen === 'arcade' ? gamePhase : 'lobby'} gameRun={gameRun} difficulty={difficulty} onLobbyChange={updateLobby} onGameScores={updateGameScores} onGameEnd={(players) => void finishRound(players)} onHits={showHits} onScoreDebug={import.meta.env.DEV ? updateScoreDebug : undefined} onSoloPresence={reportSoloPresence} registrationPlayers={registrationPlayers} onRegistrationPlayersChange={setRegistrationPlayers} registrationScreen={navigation.screen === 'tracking'} diagnosticRequested={diagnosticRequested} onDiagnosticsClose={() => { setDiagnosticRequested(false); dispatch({ type: 'closeCameraSetup' }) }} gestureContext={gestureContext} onGestureAction={handleGestureAction} soundMuted={settings.soundMuted} onRunningChange={setCameraRunning} />
+        <WebcamPanel selectedMenuLabel={selectedMenuLabel} distanceControls={activeScreen === 'practice' && !!src} motionChart={motionChart} gesturesSuspended={navigation.screen === 'arcade' && arcadePhase === 'results' && resultPhotoPending} targetRef={targetRef} playbackRef={gameVideoRef} track={track} songEdit={activeScreen === 'arcade' ? songEdit : null} videoId={current?.id} videoName={current?.name} onSectionPractice={(deltas) => void recordSectionPractice(deltas)} focus={scoringFocus} onFocusChange={setFocus} showSkeletons={settings.showCameraSkeletons} trackHead={scoringHead} showPoseDebug={settings.showPoseDebug} onPhotoFrameReady={onPhotoFrameReady} gamePhase={activeScreen === 'arcade' ? gamePhase : 'lobby'} gameRun={gameRun} difficulty={difficulty} onLobbyChange={updateLobby} onGameScores={updateGameScores} onGameEnd={(players) => void finishRound(players)} onHits={showHits} onScoreDebug={import.meta.env.DEV ? updateScoreDebug : undefined} onSoloPresence={reportSoloPresence} registrationPlayers={registrationPlayers} onRegistrationPlayersChange={setRegistrationPlayers} registrationScreen={navigation.screen === 'tracking'} diagnosticRequested={diagnosticRequested} onDiagnosticsClose={() => { setDiagnosticRequested(false); dispatch({ type: 'closeCameraSetup' }) }} gestureContext={gestureContext} onGestureAction={handleGestureAction} soundMuted={settings.soundMuted} onRunningChange={setCameraRunning} />
       </div></Suspense>}
       {navigation.screen === 'settings' && (beatLabOpen
         ? <BeatLab library={library} initialTheme={settings.menuTheme} onClose={() => setBeatLabOpen(false)} onMapChange={(key, map) => setBeatMaps((previous) => new Map(previous).set(key, map))} />

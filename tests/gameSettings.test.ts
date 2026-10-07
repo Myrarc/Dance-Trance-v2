@@ -48,6 +48,7 @@ test('settings preserve valid choices and repair invalid fields', () => {
     showCameraSkeletons: false,
     trackHead: false,
     showPoseDebug: false,
+    resultPhotos: true,
   })
 })
 
@@ -74,4 +75,12 @@ test('settings save as one durable value', () => {
 
 test('an unknown menu theme falls back to the default', () => {
   assert.equal(loadGameSettings(storage(JSON.stringify({ menuTheme: 'missing' }))).menuTheme, 'theme1')
+})
+
+// The preference is chosen before dancing so a photo pose cannot activate a menu action.
+test('score photos can be disabled before the round and the choice survives reload', () => {
+  const store = storage()
+  saveGameSettings({ ...DEFAULT_GAME_SETTINGS, resultPhotos: false }, store)
+  assert.equal(loadGameSettings(store).resultPhotos, false)
+  assert.equal(loadGameSettings(storage('{"resultPhotos":"false"}')).resultPhotos, true)
 })

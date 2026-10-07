@@ -35,7 +35,7 @@ export default function SectionList({ sections, stats, activeId, onPlay, onRemov
   const most = Math.max(...practised, 1)
 
   return (
-    <ul className="sections">
+    <ul className="sections" data-gesture-skip>
       {sections.map((section, i) => {
         const stat = stats?.[section.id]
         const share = (practised[i] / most) * 100

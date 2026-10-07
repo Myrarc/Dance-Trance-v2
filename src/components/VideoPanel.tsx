@@ -62,6 +62,7 @@ export interface TargetPose {
 const LAG_WINDOW_S = 1
 
 interface Props {
+  distanceControls?: boolean
   cues?: CueEvent[]
   reducedEffects?: boolean
   songEdit?: SongEdit | null
@@ -152,6 +153,7 @@ function fmt(t: number) {
 }
 
 export default function VideoPanel({
+  distanceControls = false,
   cues: preparedCues,
   reducedEffects = false,
   src,
@@ -917,7 +919,7 @@ export default function VideoPanel({
       </div>
 
       <div className="transport">
-        <button className="btn play" onClick={togglePlay} aria-label={playing ? 'Pause reference video' : 'Play reference video'}>
+        <button className="btn play" data-gesture-default onClick={togglePlay} aria-label={playing ? 'Pause reference video' : 'Play reference video'}>
           {playing ? '⏸' : '▶'}
         </button>
         <span className="time">{fmt(currentTime)}</span>
@@ -939,8 +941,8 @@ export default function VideoPanel({
 
       <div className="controls">
         <div className="ctrl-group">
-          <span className="ctrl-label">{T('Speed')}</span>
-          {RATES.map((r) => (
+          {!distanceControls && <span className="ctrl-label">{T('Speed')}</span>}
+          {distanceControls ? <button className="btn" onClick={() => setRateAndApply(RATES[(RATES.indexOf(rate) + 1) % RATES.length])}>{T('Speed')}: {rate}×</button> : RATES.map((r) => (
             <button key={r} className={`btn ${rate === r ? 'active' : ''}`} onClick={() => setRateAndApply(r)}>
               {r}×
             </button>
@@ -949,10 +951,12 @@ export default function VideoPanel({
 
         <div className="ctrl-group">
           <button className={`btn ${mirror ? 'active' : ''}`} onClick={() => setMirror(!mirror)}>
-            {T('Mirror')}
+            {T(distanceControls ? `Mirror: ${mirror ? 'On' : 'Off'}` : 'Mirror')}
           </button>
+          <details className="practice-device-tools" data-gesture-skip><summary>{T('Practice tools')}</summary><div className="ctrl-group">
           <button
             className="btn"
+            data-gesture-skip
             onClick={addSection}
             disabled={!canAddSection}
             title={
@@ -966,6 +970,7 @@ export default function VideoPanel({
           {locked && (
             <button
               className="btn active"
+              data-gesture-skip
               onClick={() => {
                 lockRef.current = null
                 missRef.current = 0
@@ -981,6 +986,7 @@ export default function VideoPanel({
           {onAnalyse && (
             <button
               className={`btn subtle ${track ? 'active' : ''}`}
+              data-gesture-skip
               onClick={onAnalyse}
               disabled={analysing != null}
               title={T('Get this dance ready to play')}
@@ -994,18 +1000,20 @@ export default function VideoPanel({
           )}
           <button
             className={`btn subtle ${more ? 'active' : ''}`}
+            data-gesture-skip
             onClick={() => setMore(!more)}
             title={T('Outline, fingers, zoom and A-B loop')}
           >
             {more ? T('Fewer options') : T('More options')}
           </button>
+          </div></details>
         </div>
       </div>
 
       {/* Everything below is occasionally useful and permanently in the way, so
           it stays folded until asked for. */}
       {more && (
-      <div className="controls controls-more">
+      <div className="controls controls-more" data-gesture-skip>
         <div className="ctrl-group">
           <button className={`btn ${ghost ? 'active' : ''}`} onClick={() => setGhost(!ghost)}>
             {T('Outline only')}

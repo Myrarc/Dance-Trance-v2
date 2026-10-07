@@ -1,5 +1,6 @@
+import { useModalFocus } from '../lib/useModalFocus'
 import ScoringRecorder from './ScoringRecorder'
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { T, L } from '../i18n'
 import { accuracy, movementResults, recordEligible, trackingCoverage, type PlayerRound } from '../pose/gameplay'
@@ -8,40 +9,6 @@ import { gradeFromAccuracy, type ArcadeRecord, type Grade } from '../game/record
 import { MENU_THEMES, type GameSettings } from '../lib/gameSettings'
 import { photoStage } from '../game/resultPhoto'
 
-function useModalFocus(ref: RefObject<HTMLElement | null>) {
-  useEffect(() => {
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const modal = ref.current
-    const focusableElements = () => modal
-      ? [...modal.querySelectorAll<HTMLElement>('button, input, summary, [href], [tabindex]:not([tabindex="-1"])')]
-        .filter((element) => !element.hasAttribute('disabled') && element.getClientRects().length > 0)
-      : []
-    const focusFrame = requestAnimationFrame(() => focusableElements()[0]?.focus())
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab' || !modal) return
-      const focusable = focusableElements()
-      if (!focusable.length) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (!modal.contains(document.activeElement)) {
-        event.preventDefault()
-        ;(event.shiftKey ? last : first).focus()
-      } else if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      cancelAnimationFrame(focusFrame)
-      document.removeEventListener('keydown', onKeyDown)
-      previous?.focus()
-    }
-  }, [ref])
-}
 
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
@@ -49,6 +16,15 @@ export function Brand({ compact = false }: { compact?: boolean }) {
       <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Dance Trance" />
     </div>
   )
+}
+
+export function MenuGuide({ back = 'Back', suspended = false }: { back?: string; suspended?: boolean }) {
+  return <div className={`distance-menu-guide${suspended ? ' is-suspended' : ''}`} role="note" aria-label={T('Gesture controls')}>
+    <span><b aria-hidden="true">← →</b>{T('Arms out: browse')}</span>
+    <span><b aria-hidden="true">↑</b>{T('Right hand up: select highlighted action')}</span>
+    <span><b aria-hidden="true">↶</b>{T('Left hand up')}: {T(back)}</span>
+    <small>{T('Hold for three beats')} · {T('Arrow keys')} · Enter · Esc</small>
+  </div>
 }
 
 export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, onChoose, account }: {
@@ -127,17 +103,19 @@ export function HomeScreen({ trackingReady, selected, motion, onMove, onSelect, 
   )
 }
 
-function Toggle({ label, detail, checked, onChange }: {
+function Toggle({ label, detail, checked, onChange, defaultSelected = false }: {
   label: string
   detail: string
   checked: boolean
   onChange: (checked: boolean) => void
+  defaultSelected?: boolean
 }) {
   return (
     <label className="setting-row">
       <span><strong>{T(label)}</strong><small>{T(detail)}</small></span>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <input type="checkbox" data-gesture-default={defaultSelected ? '' : undefined} checked={checked} onChange={(event) => onChange(event.target.checked)} />
       <i aria-hidden="true" />
+      <b className="setting-value" aria-hidden="true">{T(checked ? 'On' : 'Off')}</b>
     </label>
   )
 }
@@ -151,14 +129,19 @@ export function SettingsScreen({ settings, onChange, onClose, onOpenBeatLab, onO
 }) {
   const modalRef = useRef<HTMLElement>(null)
   const beatSequenceRef = useRef(0)
+  const [category, setCategory] = useState<'gameplay' | 'comfort' | 'language' | 'tools' | null>(null)
   useModalFocus(modalRef)
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => modalRef.current?.querySelector<HTMLElement>('[data-gesture-default]')?.focus({ preventScroll: true }))
+    return () => cancelAnimationFrame(frame)
+  }, [category])
+  const back = () => category ? setCategory(null) : onClose()
   const update = <K extends keyof GameSettings>(key: K, value: GameSettings[K]) =>
     onChange({ ...settings, [key]: value })
 
   return (
-    <main ref={modalRef} className="destination-screen settings-screen" role="dialog" aria-modal="true" aria-labelledby="settings-title" data-gesture-surface onKeyDown={(event) => {
-      event.stopPropagation()
-      if (event.key === 'Escape') { event.preventDefault(); onClose(); return }
+    <main ref={modalRef} className="destination-screen settings-screen distance-menu" role="dialog" aria-modal="true" aria-labelledby="settings-title" data-gesture-surface data-menu-priority="1" onKeyDown={(event) => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); back(); return }
       if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || event.target instanceof HTMLInputElement) return
       if (event.key.toLowerCase() === 'z') beatSequenceRef.current = performance.now()
       else if (event.key.toLowerCase() === 'x' && beatSequenceRef.current > 0 && performance.now() - beatSequenceRef.current <= 1000) { beatSequenceRef.current = 0; onOpenBeatLab?.() }
@@ -166,39 +149,47 @@ export function SettingsScreen({ settings, onChange, onClose, onOpenBeatLab, onO
     }}>
       <div className="screen-title-row">
         <div><span className="kicker">{T('Player preferences')}</span><h1 id="settings-title">{T('Settings')}</h1></div>
-        <button className="btn" onClick={onClose}>{T('Back')}</button>
+        <button className="btn" data-menu-back onClick={back}>{T(category ? 'Back to categories' : 'Back')}</button>
       </div>
-      <section className="settings-grid">
-        <div className="settings-card">
+      {!category && <section className="settings-categories">
+        {([
+          ['gameplay', 'Gameplay', 'Skeletons and head scoring'],
+          ['comfort', 'Sound & comfort', 'Music, effects, and score photos'],
+          ['language', 'Language', 'Choose your display language'],
+          ['tools', 'Tools', 'Tracking checks and device-side editors'],
+        ] as const).map(([id, label, detail], index) => <button key={id} className="btn settings-category" data-gesture-default={index === 0 ? '' : undefined} data-gesture-label={T(label)} onClick={() => setCategory(id)}><strong>{T(label)}</strong><span>{T(detail)}</span></button>)}
+      </section>}
+      <section className="settings-page">
+        {category === 'gameplay' && <div className="settings-card">
           <h2>{T('Gameplay')}</h2>
-          <Toggle label="Show reference skeleton" detail="Display the pose guide over the reference video." checked={settings.showSkeletons} onChange={(value) => update('showSkeletons', value)} />
+          <Toggle defaultSelected label="Show reference skeleton" detail="Display the pose guide over the reference video." checked={settings.showSkeletons} onChange={(value) => update('showSkeletons', value)} />
           <Toggle label="Show camera skeleton" detail="Display your tracked pose over the live camera." checked={settings.showCameraSkeletons} onChange={(value) => update('showCameraSkeletons', value)} />
           <Toggle label="Track head movements" detail="Include head cues and head position in scoring." checked={settings.trackHead} onChange={(value) => update('trackHead', value)} />
-        </div>
-        <div className="settings-card">
-          <h2>{T('Comfort')}</h2>
-          <Toggle label="Sound effects" detail="Countdown, judgments, combos, and results feedback." checked={!settings.soundMuted} onChange={(value) => update('soundMuted', !value)} />
+        </div>}
+        {category === 'comfort' && <div className="settings-card">
+          <h2>{T('Sound & comfort')}</h2>
+          <Toggle defaultSelected label="Sound effects" detail="Countdown, judgments, combos, and results feedback." checked={!settings.soundMuted} onChange={(value) => update('soundMuted', !value)} />
           <Toggle label="Full motion effects" detail="Turn off for calmer transitions and celebrations." checked={!settings.reducedEffects} onChange={(value) => update('reducedEffects', !value)} />
-        </div>
-        <fieldset className="settings-card music-card">
-          <legend>{L('Menu music', '菜单音乐')}</legend>
-          <div className="theme-options">
-            {[...MENU_THEMES, { id: 'off', label: 'Off' } as const].map((theme) => <button key={theme.id} type="button" className={`btn${settings.menuTheme === theme.id ? ' active' : ''}`} aria-pressed={settings.menuTheme === theme.id} onClick={() => update('menuTheme', theme.id)}>{theme.id === 'off' ? T('Off') : theme.label}</button>)}
-          </div>
-          <button type="button" className="btn" onClick={onOpenBeatLab}>{L('Open Beat Lab', '打开节拍编辑器')}</button>
-        </fieldset>
-        <fieldset className="settings-card language-card">
+          <Toggle label="Score photos" detail="Automatically take a local photo after each round." checked={settings.resultPhotos} onChange={(value) => update('resultPhotos', value)} />
+          <button className="btn setting-choice" onClick={() => {
+            const choices = [...MENU_THEMES.map((theme) => theme.id), 'off'] as const
+            update('menuTheme', choices[(choices.indexOf(settings.menuTheme) + 1) % choices.length])
+          }}>{T('Menu music')}: <strong>{MENU_THEMES.find((theme) => theme.id === settings.menuTheme)?.label ?? T('Off')}</strong><span>{T('Select to change')}</span></button>
+        </div>}
+        {category === 'language' && <fieldset className="settings-card language-card">
           <legend>{T('Language')}</legend>
-          <label><input type="radio" name="language" checked={settings.language === 'en'} onChange={() => update('language', 'en')} /> English</label>
+          <label><input type="radio" data-gesture-default name="language" checked={settings.language === 'en'} onChange={() => update('language', 'en')} /> English</label>
           <label><input type="radio" name="language" checked={settings.language === 'zh'} onChange={() => update('language', 'zh')} /> 中文</label>
-        </fieldset>
-        <details className="settings-card advanced-settings"><summary>{L('Advanced tools', '高级工具')}</summary>
-          <button className="btn primary" onClick={onOpenDiagnostics}>{L('Camera diagnostics', '摄像头检测')}</button>
-          <p>{L('Try three movements and check tracking before you play.', '开始游戏前，试做三个动作并检查追踪效果。')}</p>
+        </fieldset>}
+        {category === 'tools' && <div className="settings-card advanced-settings">
+          <h2>{T('Tools')}</h2>
+          <button className="btn primary" data-gesture-default onClick={onOpenDiagnostics}>{L('Camera diagnostics', '摄像头检测')}</button>
+          <button className="btn" onClick={onOpenBeatLab}>{L('Open Beat Lab', '打开节拍编辑器')} <small>{T('Edit timing at the device')}</small></button>
           <Toggle label="Show pose diagnostics" detail="Display tracking confidence and selection details over the game." checked={settings.showPoseDebug} onChange={(value) => update('showPoseDebug', value)} />
-          <ScoringRecorder />
-        </details>
+          <details className="device-settings-tools" data-gesture-skip><summary>Scoring recorder · use at the device</summary><ScoringRecorder /></details>
+        </div>}
       </section>
+      <MenuGuide back={category ? 'Back to categories' : 'Back'} />
     </main>
   )
 }
@@ -212,15 +203,15 @@ export function PauseOverlay({ onResume, onRestart, onSettings, onQuit }: {
   const modalRef = useRef<HTMLElement>(null)
   useModalFocus(modalRef)
   return (
-    <section ref={modalRef} className="pause-overlay" role="dialog" aria-modal="true" aria-labelledby="pause-title" data-gesture-surface>
+    <section ref={modalRef} className="pause-overlay distance-menu" role="dialog" aria-modal="true" aria-labelledby="pause-title" data-gesture-surface data-menu-priority="1">
       <div className="pause-card">
         <span className="kicker">{T('Take a breath')}</span>
         <h2 id="pause-title">{T('Paused')}</h2>
-        <button className="btn primary" onClick={onResume}>{T('Resume')}</button>
+        <button className="btn primary" data-gesture-default data-menu-back onClick={onResume}>{T('Resume')}</button>
         <button className="btn" onClick={onRestart}>{T('Restart song')}</button>
         <button className="btn" onClick={onSettings}>{T('Settings')}</button>
         <button className="btn subtle" onClick={onQuit}>{T('Quit to Home')}</button>
-        <small>{T('Press Escape to resume')}</small>
+        <MenuGuide back="Resume" />
       </div>
     </section>
   )
@@ -251,13 +242,14 @@ export interface ResultRecord {
   isNewBest: boolean
 }
 
-export function ResultsScreen({ players, difficulty, records, reducedEffects, photoRound, photoPrompt, onCapture, onPhotoPendingChange, onReplay, onChooseSong, onHome }: {
+export function ResultsScreen({ players, difficulty, records, reducedEffects, photoRound, photoPrompt, takePhoto = true, onCapture, onPhotoPendingChange, onReplay, onChooseSong, onHome }: {
   players: PlayerRound[]
   difficulty: Difficulty
   records: (ResultRecord | null)[]
   reducedEffects: boolean
   photoRound: number
   photoPrompt: string
+  takePhoto?: boolean
   onCapture: () => Promise<void>
   onPhotoPendingChange?: (pending: boolean) => void
   onReplay: () => void
@@ -265,7 +257,10 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
   onHome: () => void
 }) {
   const [photoTime, setPhotoTime] = useState(0)
-  const [photoStatus, setPhotoStatus] = useState<'waiting' | 'saving' | 'saved' | 'error' | 'cancelled' | 'skipped'>('waiting')
+  const [photoStatus, setPhotoStatus] = useState<'waiting' | 'saving' | 'saved' | 'error' | 'cancelled' | 'skipped'>(takePhoto ? 'waiting' : 'skipped')
+  const [showDetails, setShowDetails] = useState(false)
+  const replayRef = useRef<HTMLButtonElement>(null)
+  const photoPending = photoStatus === 'waiting' || photoStatus === 'saving'
   const [flash, setFlash] = useState(false)
   const captureRef = useRef(onCapture)
   captureRef.current = onCapture
@@ -276,6 +271,8 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
     onPhotoPendingChange?.(photoStatus === 'waiting' || photoStatus === 'saving')
   }, [photoStatus, onPhotoPendingChange])
   useEffect(() => {
+    if (!takePhoto) { setPhotoStatus('skipped'); return }
+    setPhotoStatus('waiting')
     let active = true
     let pending = true
     let startedAt = performance.now()
@@ -319,7 +316,10 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [photoRound])
+  }, [photoRound, takePhoto])
+  useEffect(() => {
+    if (!photoPending) replayRef.current?.focus({ preventScroll: true })
+  }, [photoPending])
   useEffect(() => {
     if (!flash) return
     const timer = window.setTimeout(() => setFlash(false), 1500)
@@ -338,7 +338,9 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
   }
   const stage = photoStage(photoTime)
   return (
-    <section className="results-card" aria-labelledby="results-title">
+    <section className={`results-card distance-menu${showDetails ? ' is-details' : ''}${photoPending ? ' is-photo-pending' : ''}`} aria-labelledby="results-title" onKeyDown={(event) => {
+      if (event.key === 'Escape' && photoStatus === 'waiting') { event.preventDefault(); event.stopPropagation(); skipPhoto() }
+    }}>
       <span className="results-eyebrow">{T('Routine complete')} · {T(difficulty)}</span>
       <h2 id="results-title">{T('Final score')}</h2>
       <div className={`result-players${players.length > 1 ? ' is-multiplayer' : ''}`}>
@@ -354,36 +356,39 @@ export function ResultsScreen({ players, difficulty, records, reducedEffects, ph
                 <div className={`grade-stamp grade-${grade.toLowerCase()}`} aria-label={`${T('Grade')} ${grade}`}>{grade}</div>
                 <strong className="result-score"><AnimatedScore value={player.score} reduced={reducedEffects} /></strong>
               </div>
-              <div className="result-breakdown">
+              <div className="result-summary" hidden={showDetails}>
+                <div><span>{T('Accuracy')}</span><b>{resultAccuracy}%</b></div>
+                <div><span>{T('max combo')}</span><b>{player.maxCombo}×</b></div>
+              </div>
+              <div className="result-breakdown" hidden={!showDetails}>
                 <h4>{T('Movement breakdown')}</h4>
                 <div className="result-stat"><span>{T('Movement + timing accuracy')}</span><b>{resultAccuracy}%</b></div>
                 <div className="result-stat"><span>{T('max combo')}</span><b>{player.maxCombo}×</b></div>
-                <div className="result-hit result-hit-perfect"><span>{T('Perfect match')}</span><b>{player.perfect}</b></div>
+                <div className="result-judgments"><div className="result-hit result-hit-perfect"><span>{T('Perfect match')}</span><b>{player.perfect}</b></div>
                 <div className="result-hit result-hit-good"><span>{T('Good match')}</span><b>{player.good}</b></div>
-                <div className="result-hit result-hit-miss"><span>{T('Missed move')}</span><b>{player.miss}</b></div>
+                <div className="result-hit result-hit-miss"><span>{T('Missed move')}</span><b>{player.miss}</b></div></div>
                 <small>{L(`${movements.scored} movements scored · ${trackingCoverage(player)}% tracking coverage`, `已评分 ${movements.scored} 个动作 · 追踪覆盖率 ${trackingCoverage(player)}%`)}</small>
                 {movements.unscored > 0 && <small>{L(`${movements.unscored} not scored due to tracking`, `${movements.unscored} 个动作因追踪不足未评分`)}</small>}
                 {!recordEligible(player) && <small>{L('Personal best unavailable — camera could not score enough moves.', '无法记录个人最佳：摄像头未能评分足够多的动作。')}</small>}
                 {records[index] && <small className="result-best">{T('Personal best')}: {records[index].record.bestScore.toLocaleString()}</small>}
               </div>
+              {!showDetails && <p className="result-tracking">{T('Tracking')}: {trackingCoverage(player)}%{!recordEligible(player) && <span>{T('Not enough tracking for a personal best.')}</span>}</p>}
             </article>
           )
         })}
       </div>
       <div className="result-actions">
-        <button className="btn primary" onClick={onReplay} autoFocus>{T('Play again')}</button>
-        <button className="btn" onClick={onChooseSong}>{T('Choose another song')}</button>
+        <button ref={replayRef} className="btn primary" data-gesture-default onClick={onReplay}>{T('Play again')}</button>
+        <button className="btn" onClick={onChooseSong}>{T('Choose song')}</button>
         <button className="btn result-home" onClick={onHome}>{T('Home')}</button>
+        <button className="btn" data-menu-back={showDetails ? '' : undefined} onClick={() => setShowDetails((value) => !value)}>{T(showDetails ? 'Hide details' : 'Details')}</button>
       </div>
       {photoStatus === 'waiting' && <p className="result-photo-status">{T('Photo in a moment. Menu gestures resume after the photo — lower your hands first.')} <button className="btn" onClick={skipPhoto}>{T('Skip photo')}</button></p>}
-      {photoStatus === 'skipped' && <p className="result-photo-status" role="status">{T('Photo skipped. Lower your hands to use menu gestures.')}</p>}
+      {photoStatus === 'skipped' && takePhoto && <p className="result-photo-status" role="status">{T('Photo skipped. Lower your hands to use menu gestures.')}</p>}
       {photoStatus === 'saved' && <p className="result-photo-status" role="status">{T('Photo saved to Photos')}</p>}
       {photoStatus === 'saving' && <p className="result-photo-status" role="status">{L('Saving your photo…', '正在保存照片…')}</p>}
       {(photoStatus === 'error' || photoStatus === 'cancelled') && <p className="result-photo-status" role="alert">{L(photoStatus === 'error' ? 'Photo could not be saved.' : 'Photo countdown stopped when this page was hidden.', photoStatus === 'error' ? '照片未能保存。' : '页面隐藏时，拍照倒计时已停止。')} <button className="btn" onClick={retryPhoto}>{L('Retry photo', '重试拍照')}</button></p>}
-      <div className={`result-gesture-banner${photoStatus === 'waiting' || photoStatus === 'saving' ? ' is-suspended' : ''}`} role="note" aria-label={L('Gesture controls', '手势操作')}>
-        <p className="result-gesture-line result-gesture-replay">{L('Right hand up - Replay', '右手举起 - 重玩')}</p>
-        <p className="result-gesture-line result-gesture-song">{L('Left hand up - Choose song', '左手举起 - 选择歌曲')}</p>
-      </div>
+      <MenuGuide suspended={photoPending} back={showDetails ? 'Hide details' : 'Choose song'} />
       {photoStatus === 'waiting' && stage.phase === 'posing' && createPortal(<div className="result-photo-prompt" role="status" aria-live="polite"><strong>{T(photoPrompt)}</strong><span>{stage.digit}</span><button className="btn" onClick={skipPhoto}>{T('Skip photo')}</button></div>, document.body)}
       {flash && createPortal(<div className="result-photo-flash" aria-hidden="true" />, document.body)}
     </section>

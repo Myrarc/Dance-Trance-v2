@@ -160,8 +160,8 @@ export default function BeatLab({ library, initialTheme, onClose, onMapChange }:
     if (controls.length && event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls.at(-1)?.focus() }
     else if (controls.length && !event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0].focus() }
   }}>
-    <div className="beat-lab-head"><h1>Beat Lab</h1><button className="btn" onClick={close}>Back to Settings</button></div>
-    <p className="beat-lab-intro">Set the tempo and the first beat. Edge lights will pulse on every beat from that point, in sync with the track.</p>
+    <div className="beat-lab-head distance-tool-exit" data-gesture-surface data-menu-priority="2"><h1>Beat Lab</h1><button className="btn" data-menu-back data-gesture-default onClick={close}>Back to Settings · Esc</button></div>
+    <p className="beat-lab-intro">Edit at the device. Raise your left hand to go back. Set the tempo and the first beat. Edge lights will pulse on every beat from that point, in sync with the track.</p>
     <div className="beat-lab-track"><label htmlFor="beat-lab-track">Track</label><select id="beat-lab-track" value={key} onChange={(event) => choose(event.target.value)}>{MENU_THEMES.map((item) => <option key={item.id} value={themeBeatKey(item.id)}>{item.label}</option>)}<optgroup label="Library songs">{library.map((entry) => <option key={entry.id} value={songBeatKey(entry.id)}>{entry.name}</option>)}</optgroup></select></div>
     <div className="beat-lab-layout">
       <section className="beat-lab-panel" aria-label="Beat timing">
@@ -182,7 +182,7 @@ export default function BeatLab({ library, initialTheme, onClose, onMapChange }:
         <p>The border shows the BPM pulse while the track plays.</p>
       </section>
     </div>
-    {pending && <div className="beat-lab-confirm" role="alertdialog" aria-label="Confirm beat map change"><p>{pending.kind === 'restore' ? songTrack ? 'Turn off edge lighting for this song?' : 'Remove this timing and use automatic beats?' : 'Discard unsaved BPM changes?'}</p><button ref={confirmRef} className="btn" onClick={() => setPending(null)}>Cancel</button><button className="btn primary" onClick={confirmPending}>Confirm</button></div>}
+    {pending && <div className="beat-lab-confirm distance-menu" data-gesture-surface data-menu-priority="3" role="alertdialog" aria-label="Confirm beat map change"><p>{pending.kind === 'restore' ? songTrack ? 'Turn off edge lighting for this song?' : 'Remove this timing and use automatic beats?' : 'Discard unsaved BPM changes?'}</p><button ref={confirmRef} data-menu-back data-gesture-default className="btn" onClick={() => setPending(null)}>Cancel</button><button className="btn primary" onClick={confirmPending}>Confirm</button></div>}
     <div ref={glowRef} className="beat-lab-glow" aria-hidden="true" />
   </main>
 }

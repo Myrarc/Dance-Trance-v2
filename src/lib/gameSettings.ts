@@ -16,6 +16,7 @@ export interface GameSettings {
   showCameraSkeletons: boolean
   trackHead: boolean
   showPoseDebug: boolean
+  resultPhotos: boolean
 }
 
 type SettingsStorage = Pick<Storage, 'getItem' | 'setItem'>
@@ -31,6 +32,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   showCameraSkeletons: true,
   trackHead: false,
   showPoseDebug: false,
+  resultPhotos: true,
 }
 
 function browserStorage(): SettingsStorage | null {
@@ -56,6 +58,7 @@ export function loadGameSettings(storage: SettingsStorage | null = browserStorag
         : typeof saved.showSkeletons === 'boolean' ? saved.showSkeletons : true,
       trackHead: typeof saved.trackHead === 'boolean' ? saved.trackHead : false,
       showPoseDebug: typeof saved.showPoseDebug === 'boolean' ? saved.showPoseDebug : false,
+      resultPhotos: typeof saved.resultPhotos === 'boolean' ? saved.resultPhotos : true,
     }
   } catch {
     return DEFAULT_GAME_SETTINGS

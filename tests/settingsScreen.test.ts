@@ -5,19 +5,20 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 import { DEFAULT_GAME_SETTINGS } from '../src/lib/gameSettings.ts'
 
-test('camera skeleton is controlled alongside reference skeleton in Settings', async () => {
+test('Settings starts with four short categories instead of a long flat gesture traversal', async () => {
   const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
   try {
     const { SettingsScreen } = await server.ssrLoadModule('/src/components/GameShell.tsx')
     const html = renderToStaticMarkup(createElement(SettingsScreen, {
-      settings: { ...DEFAULT_GAME_SETTINGS, showSkeletons: false, showCameraSkeletons: true },
+      settings: DEFAULT_GAME_SETTINGS,
       onChange: () => {},
       onClose: () => {},
     }))
-    assert.match(html, /Show reference skeleton/)
-    const cameraSetting = html.match(/<label class="setting-row"><span><strong>Show camera skeleton<\/strong>.*?<\/label>/)?.[0]
-    assert.ok(cameraSetting, 'the camera skeleton control belongs in Settings')
-    assert.match(cameraSetting, /<input type="checkbox" checked=""/)
+    assert.equal((html.match(/class="btn settings-category"/g) ?? []).length, 4)
+    for (const category of ['Gameplay', 'Sound &amp; comfort', 'Language', 'Tools']) assert.ok(html.includes(category))
+    assert.match(html, /data-menu-back/)
+    assert.match(html, /select highlighted action/)
+    assert.doesNotMatch(html, /type="checkbox"/)
   } finally {
     await server.close()
   }

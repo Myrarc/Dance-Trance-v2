@@ -82,7 +82,7 @@ export default function CameraDiagnostic({ read, playerCount, capture, onClose }
   const next = DIAGNOSTIC_STEPS.find((step) => elapsed < step.start)
 
   if (results) return (
-    <div className="diagnostic-results" role="status">
+    <div className="diagnostic-results" data-gesture-surface data-menu-priority="2" role="status">
       <h3>Camera diagnostics</h3>
       {results.map((result, index) => (
         <div className="diagnostic-player-result" key={index}>
@@ -97,11 +97,11 @@ export default function CameraDiagnostic({ read, playerCount, capture, onClose }
         </div>
       ))}
       {framingRef.current.size > 0 && <p>{[...framingRef.current].join(' · ')}</p>}
-      <button className="btn primary" onClick={onClose}>Done</button>
+      <button className="btn primary" data-menu-back data-gesture-default onClick={onClose}>Done · Esc</button>
     </div>
   )
 
-  return <div className="diagnostic-hud" role="status">
+  return <div className="diagnostic-hud" data-gesture-surface data-menu-priority="2" role="status">
     <div className="diagnostic-instruction">
       <span>{elapsed < 0 ? `Starting in ${Math.ceil(-elapsed)}` : active ? 'Follow the marker' : 'Get ready'}</span>
       <strong>{elapsed < 0 ? 'Stand ready, arms down' : active?.label ?? next?.label ?? 'Finish strong'}</strong>
@@ -118,6 +118,6 @@ export default function CameraDiagnostic({ read, playerCount, capture, onClose }
       <div className="diagnostic-feedback">{feedback.quality.map((quality, player) =>
         <span key={player}>{playerCount === 2 ? `P${player + 1}: ` : ''}{quality === null ? 'Tracking lost' : quality >= 0.8 ? 'Perfect!' : quality >= 0.45 ? 'Good!' : 'Keep practising'}</span>,
       )}</div>}
-    <button className="btn diagnostic-stop" onClick={onClose}>Stop test</button>
+    <button className="btn diagnostic-stop" data-menu-back data-gesture-default onClick={onClose}>Stop test · Left hand up / Esc</button>
   </div>
 }

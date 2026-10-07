@@ -432,8 +432,15 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
     draggingJoint.current = null
   }
 
+  const closeEditor = () => {
+    if (busy || saving) return
+    if (dirty) void persist('save', true)
+    else onClose()
+  }
+
   return <div className="song-editor" role="dialog" aria-modal="true" aria-label="Song editor" tabIndex={-1} ref={root} onKeyDown={(event) => {
     event.stopPropagation()
+    if (event.key === 'Escape') { event.preventDefault(); if (confirmClose) setConfirmClose(false); else closeEditor(); return }
     if (event.key === 'Tab') {
       const container = confirmClose ? root.current?.querySelector('.editor-confirm') : root.current
       const controls = Array.from(container?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]') ?? []).filter((control) => control.getClientRects().length > 0)
@@ -476,7 +483,7 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
     else if (!event.repeat && event.key.toLowerCase() === 'a') addMarker()
     else if (!event.repeat && ['z', 'x', 'c'].includes(event.key.toLowerCase())) addLight(event.key.toLowerCase() === 'z' ? 'beat' : event.key.toLowerCase() === 'x' ? 'accent' : 'burst')
   }}>
-    <header className="editor-header"><div><small>SONG EDITOR · LOCAL ONLY</small><h1>{entry.name}</h1></div><button className="btn primary" disabled={!edit || busy || saving || !dirty} onClick={() => void persist('save')}>{saving ? 'Saving…' : dirty ? 'Save now' : 'Saved'}</button><button className="btn" disabled={busy || saving} onClick={() => dirty ? void persist('save', true) : onClose()}>Close</button></header>
+    <header className="editor-header distance-tool-exit" data-gesture-surface data-menu-priority="2"><div><small>SONG EDITOR · LOCAL ONLY</small><h1>{entry.name}</h1></div><button className="btn primary" disabled={!edit || busy || saving || !dirty} onClick={() => void persist('save')}>{saving ? 'Saving…' : dirty ? 'Save now' : 'Saved'}</button><button className="btn" disabled={busy || saving} data-menu-back data-gesture-default onClick={closeEditor}>Close · Esc</button></header>
     <p className="editor-status" role="status">{status}</p>
     {edit && !source && <label className="btn">Reselect original video<input type="file" accept="video/*" onChange={async (event) => {
       const file = event.target.files?.[0]; if (!file) return
@@ -557,6 +564,6 @@ export default function SongEditor({ entry, onClose, onSaved, reducedEffects }: 
         </div><small>Original file stays intact. Every completed edit autosaves. Space: play/pause · ←/→: 1/30 second · Shift+←/→: 0.1 second · Ctrl+Z: undo · Ctrl+Shift+Z: redo · Ctrl/Cmd+C/V: copy/paste</small>
       </section>
     </fieldset>}
-    {confirmClose && <div className="editor-confirm" role="alertdialog" aria-label="Unsaved song edits"><h2>Keep your edits?</h2><p>Your changes are not active until saved.</p><button disabled={busy} onClick={() => void persist('draft')}>Keep draft & close</button><button disabled={busy} onClick={() => void persist('discard')}>Discard edits</button><button disabled={busy} onClick={() => setConfirmClose(false)}>Continue editing</button></div>}
+    {confirmClose && <div className="editor-confirm distance-menu" data-gesture-surface data-menu-priority="3" role="alertdialog" aria-label="Unsaved song edits"><h2>Keep your edits?</h2><p>Your changes are not active until saved.</p><button className="btn" disabled={busy} onClick={() => void persist('draft')}>Keep draft & close</button><button className="btn" disabled={busy} onClick={() => void persist('discard')}>Discard edits</button><button className="btn" data-menu-back data-gesture-default disabled={busy} onClick={() => setConfirmClose(false)}>Continue editing</button></div>}
   </div>
 }
